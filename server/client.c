@@ -35,6 +35,8 @@ void display_menu() {
     printf("1. Register\n");
     printf("2. Login\n");
     printf("3. Send Message\n");
+    printf("4. Create Posts\n");
+    printf("5. View Posts\n");
     printf("0. Exit\n");
     printf("Select an option: ");
 }
@@ -74,21 +76,22 @@ int main() {
 
     // 클라이언트 메뉴
     while (1) {
+        sleep(1);
         display_menu();
         scanf("%d", &choice);
         getchar(); // 입력 버퍼 클리어
 
         switch (choice) {
             case 1: { // 회원가입
-                char username[50], password[50];
+                char user_id[50], password[50];
                 printf("Enter new username: ");
-                scanf("%s", username);
+                scanf("%s", user_id);
                 printf("Enter new password: ");
                 scanf("%s", password);
                 getchar(); // 입력 버퍼 클리어
 
                 // 회원가입 메시지 전송
-                sprintf(message, "REGISTER %s %s", username, password);
+                sprintf(message, "REGISTER %s %s", user_id, password); 
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
                     break;
@@ -97,15 +100,15 @@ int main() {
             }
 
             case 2: { // 로그인
-                char username[50], password[50];
+                char user_id[50], password[50];
                 printf("Enter username: ");
-                scanf("%s", username);
+                scanf("%s", user_id);
                 printf("Enter password: ");
                 scanf("%s", password);
                 getchar(); // 입력 버퍼 클리어
 
                 // 로그인 메시지 전송
-                sprintf(message, "LOGIN %s %s", username, password);
+                sprintf(message, "LOGIN %s %s", user_id, password);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
                     break;
@@ -124,6 +127,40 @@ int main() {
 
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
+                }
+                break;
+            }
+
+            case 4: { // 게시글 생성
+                char title[20], content[50];
+                printf("Enter title: ");
+                fgets(title, sizeof(title), stdin);
+                title[strcspn(title, "\n")] = '\0';
+
+                printf("Enter content: ");
+                fgets(content, sizeof(content), stdin);
+                content[strcspn(content, "\n")] = '\0';
+
+                sprintf(message, "CREATE_POST \"%s\" \"%s\"", title, content);
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                }
+                break;
+            }
+
+            case 5: { // 게시글 목록 조회
+                sprintf(message, "LIST_POSTS");
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                }
+
+                char server_reply[BUFFER_SIZE * 4];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0'; // 문자열 끝 처리
+                    printf("\n=== List of Posts ===\n%s", server_reply);
+                } else {
+                    printf("Failed to receive posts from server.\n");
                 }
                 break;
             }
