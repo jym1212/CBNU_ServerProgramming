@@ -14,7 +14,7 @@
 
 typedef struct {
     int socket;
-    char user_id[20];
+    char user_id[MAX_USERID];
     int is_logged_in;
 } ClientState;
 
@@ -66,6 +66,27 @@ void *handle_client(void *socket_desc) {
         buffer[recv_size] = '\0';
         printf("Client %d: %s\n", client_socket, buffer);
 
+        // 로그인 상태 확인 처리
+        if (strncmp(buffer, "CHECK_LOGIN", 11) == 0) {
+            int is_logged_in = 0;
+            
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+            } else {
+                send(client_socket, "LOGGED_IN", strlen("LOGGED_IN"), 0);
+            }
+            continue;
+        }
+        
         // 회원가입 처리
         if (strncmp(buffer, "REGISTER", 8) == 0) {
             char user_id[MAX_USERID], password[MAX_PASSWORD];
@@ -109,12 +130,6 @@ void *handle_client(void *socket_desc) {
 
         // 게시글 작성 처리
         if (strncmp(buffer, "CREATE_POST", 11) == 0) {
-            char title[MAX_TITLE], content[MAX_CONTENT];
-            // 큰따옴표 기준으로 데이터 파싱
-            sscanf(buffer + 12, "\"%[^\"]\" \"%[^\"]\"", title, content);
-            printf("Parsed title: %s\n", title);
-            printf("Parsed content: %s\n", content);
-
             char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
 
@@ -129,9 +144,16 @@ void *handle_client(void *socket_desc) {
             pthread_mutex_unlock(&mutex);
 
             if (!is_logged_in) {
-                send(client_socket, "CREATE_POST_FAIL_NOT_LOGGED_IN", strlen("CREATE_POST_FAIL_NOT_LOGGED_IN"), 0);
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
                 continue;
             }
+
+            
+            char title[MAX_TITLE], content[MAX_CONTENT];
+            // 큰따옴표 기준으로 데이터 파싱
+            sscanf(buffer + 12, "\"%[^\"]\" \"%[^\"]\"", title, content);
+            printf("Parsed title: %s\n", title);
+            printf("Parsed content: %s\n", content);
 
             if (create_post(user_id, title, content) == 1) {
                 send(client_socket, "CREATE_POST_SUCCESS", strlen("CREATE_POST_SUCCESS"), 0);
@@ -143,6 +165,22 @@ void *handle_client(void *socket_desc) {
 
         // 게시글 목록 조회 처리
         if (strncmp(buffer, "LIST_POSTS", 11) == 0) {
+            int is_logged_in = 0;
+    
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
             char post_list[BUFFER_SIZE * 4]; // 클라이언트에 보낼 게시글 목록  
              
             if (list_posts(post_list, sizeof(post_list))) {
@@ -156,10 +194,27 @@ void *handle_client(void *socket_desc) {
         // 단일 게시글 조회 처리
         if (strncmp(buffer, "READ_POST", 9) == 0) {
             int post_id;
+            int is_logged_in = 0;
+
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
             sscanf(buffer + 10, "%d", &post_id); // post_id 파싱
             printf("Requested Post ID: %d\n", post_id); // 디버깅 로그
 
             Post post;
+
             if (read_post(post_id, &post) == 1) {
                 // 게시글 데이터를 문자열로 변환하여 클라이언트에 전송
                 char response[BUFFER_SIZE];
@@ -177,7 +232,7 @@ void *handle_client(void *socket_desc) {
         if (strncmp(buffer, "UPDATE_POST", 11) == 0) {
             int post_id;
             char title[MAX_TITLE], content[MAX_CONTENT];
-            char user_id[20] = {0};
+            char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
             
             // 로그인 상태 확인
@@ -192,11 +247,9 @@ void *handle_client(void *socket_desc) {
             pthread_mutex_unlock(&mutex);
             
             if (!is_logged_in) {
-                send(client_socket, "UPDATE_FAIL_NOT_LOGGED_IN", 
-                     strlen("UPDATE_FAIL_NOT_LOGGED_IN"), 0);
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
                 continue;
             }
-
             // 입력 파싱
             sscanf(buffer + 12, "%d \"%[^\"]\" \"%[^\"]\"", 
                    &post_id, title, content);
@@ -228,7 +281,7 @@ void *handle_client(void *socket_desc) {
         // 게시글 삭제 처리
         if (strncmp(buffer, "DELETE_POST", 11) == 0) {
             int post_id;
-            char user_id[20] = {0};
+            char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
             
             // 로그인 상태 확인
@@ -243,8 +296,7 @@ void *handle_client(void *socket_desc) {
             pthread_mutex_unlock(&mutex);
             
             if (!is_logged_in) {
-                send(client_socket, "DELETE_FAIL_NOT_LOGGED_IN", 
-                     strlen("DELETE_FAIL_NOT_LOGGED_IN"), 0);   
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
                 continue;
             }
 

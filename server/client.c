@@ -9,7 +9,12 @@
 #define PORT 8080            // 서버 포트
 #define BUFFER_SIZE 1024     // 송수신 버퍼 크기
 
-// 서버로부터 메시지 수신을 처리하는 스레드 함수
+#define MAX_USERID 20
+#define MAX_PASSWORD 20
+#define MAX_TITLE 20
+#define MAX_CONTENT 50
+
+// receive_messages 함수 수정
 void *receive_messages(void *socket_desc) {
     int client_socket = *(int *)socket_desc;
     char server_reply[BUFFER_SIZE];
@@ -17,7 +22,10 @@ void *receive_messages(void *socket_desc) {
 
     while ((recv_size = recv(client_socket, server_reply, BUFFER_SIZE, 0)) > 0) {
         server_reply[recv_size] = '\0';
-        printf("\nServer: %s\n", server_reply);
+        // NOT_LOGGED_IN 메시지는 메인 스레드에서 처리하도록 무시
+        if (strcmp(server_reply, "NOT_LOGGED_IN") != 0) {
+            printf("\nServer: %s\n", server_reply);
+        }
     }
 
     if (recv_size == 0) {
@@ -86,7 +94,7 @@ int main() {
 
         switch (choice) {
             case 1: { // 회원가입
-                char user_id[20], password[20];
+                char user_id[MAX_USERID], password[MAX_PASSWORD];
                 printf("Enter new username: ");
                 scanf("%s", user_id);
                 printf("Enter new password: ");
@@ -103,7 +111,7 @@ int main() {
             }
 
             case 2: { // 로그인
-                char user_id[20], password[20];
+                char user_id[MAX_USERID], password[MAX_PASSWORD];
                 printf("Enter username: ");
                 scanf("%s", user_id);
                 printf("Enter password: ");
@@ -135,7 +143,26 @@ int main() {
             }
 
             case 4: { // 게시글 생성
-                char title[20], content[50];
+                // 로그인 상태 확인 요청    
+                sprintf(message, "CHECK_LOGIN");
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
+                        printf("Please log in first.\n");
+                        sleep(1); // 메시지를 볼 수 있도록 잠시 대기
+                        continue;
+                    }   
+                }
+
+                // 로그인 상태가 확인되면 게시글 작성 진행
+                char title[MAX_TITLE], content[MAX_CONTENT];
                 printf("Enter title: ");
                 fgets(title, sizeof(title), stdin);
                 title[strcspn(title, "\n")] = '\0';
@@ -145,8 +172,18 @@ int main() {
                 content[strcspn(content, "\n")] = '\0';
 
                 sprintf(message, "CREATE_POST \"%s\" \"%s\"", title, content);
-                if(send(client_socket, message, strlen(message), 0) < 0){
+                if(send(client_socket, message, strlen(message), 0) < 0){   
                     perror("Send failed");
+                    break;
+                }
+
+                // 게시글 작성 결과 수신
+                memset(server_reply, 0, sizeof(server_reply));
+                recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    printf("%s\n", server_reply);
+                    sleep(1);
                 }
                 break;
             }
@@ -160,7 +197,11 @@ int main() {
                 char server_reply[BUFFER_SIZE * 4];
                 ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
                 if (recv_size > 0) {
-                    server_reply[recv_size] = '\0'; // 문자열 끝 처리
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
+                        printf("Please log in first.\n");
+                        continue;
+                    }
                     printf("\n=== List of Posts ===\n%s", server_reply);
                 } else {
                     printf("Failed to receive posts from server.\n");
@@ -169,38 +210,73 @@ int main() {
             }
 
             case 6: { // 게시글 조회
+                // 로그인 상태 확인 요청
+                sprintf(message, "CHECK_LOGIN");
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
+                        printf("Please log in first.\n");
+                        sleep(1);
+                        continue;
+                    }
+                }
+
+                // 로그인 상태가 확인되면 게시글 조회 진행
                 int post_id;    
                 printf("Enter Post ID to view: ");
                 scanf("%d", &post_id);
                 getchar(); // 입력 버퍼 정리
 
-                // 서버에 게시글 조회 요청
                 sprintf(message, "READ_POST %d", post_id);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
                     break;
                 }
 
-                // 서버에서 응답 수신
-                char server_reply[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                memset(server_reply, 0, sizeof(server_reply));
+                recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
                 if (recv_size > 0) {
-                        server_reply[recv_size] = '\0'; // 문자열 끝 처리
+                    server_reply[recv_size] = '\0';
                     printf("\n=== Post Details ===\n%s", server_reply);
-                } else {
-                    printf("Failed to receive post details from server.\n");
+                    sleep(1);
                 }
                 break;
             }
 
             case 7: { // 게시글 수정
+                // 로그인 상태 확인 요청
+                sprintf(message, "CHECK_LOGIN");
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
+                        printf("Please log in first.\n");
+                        sleep(1);
+                        continue;
+                    }
+                }
+
+                // 로그인 상태가 확인되면 게시글 수정 진행
                 int post_id;
-                char title[20], content[50];
-    
+                char title[MAX_TITLE], content[MAX_CONTENT];
+
                 printf("Enter Post ID to update: ");
                 scanf("%d", &post_id);
                 getchar(); // 버퍼 비우기
-    
+
                 printf("Enter new title: ");
                 fgets(title, sizeof(title), stdin);
                 title[strcspn(title, "\n")] = '\0';
@@ -212,11 +288,39 @@ int main() {
                 sprintf(message, "UPDATE_POST %d \"%s\" \"%s\"", post_id, title, content);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
+                    break;
+                }
+
+                memset(server_reply, 0, sizeof(server_reply));
+                recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    printf("%s\n", server_reply);
+                    sleep(1);
                 }
                 break;
             }
 
             case 8: { // 게시글 삭제
+                // 로그인 상태 확인 요청
+                sprintf(message, "CHECK_LOGIN");
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
+                        printf("Please log in first.\n");
+                        sleep(1);
+                        continue;
+                    }
+                }
+
+                // 로그인 상태가 확인되면 게시글 삭제 진행
                 int post_id;
                 printf("Enter Post ID to delete: ");
                 scanf("%d", &post_id);
@@ -225,6 +329,15 @@ int main() {
                 sprintf(message, "DELETE_POST %d", post_id);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
+                    break;
+                }
+
+                memset(server_reply, 0, sizeof(server_reply));
+                recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    printf("%s\n", server_reply);
+                    sleep(1);
                 }
                 break;
             }
