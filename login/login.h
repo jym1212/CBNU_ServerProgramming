@@ -6,7 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_USERNAME 20
+#define MAX_USERID 20
 #define MAX_PASSWORD 20
 
 int check_id(char *id);

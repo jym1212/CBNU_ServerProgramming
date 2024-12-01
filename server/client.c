@@ -36,7 +36,10 @@ void display_menu() {
     printf("2. Login\n");
     printf("3. Send Message\n");
     printf("4. Create Posts\n");
-    printf("5. View Posts\n");
+    printf("5. View ALL Posts\n");
+    printf("6. Read Post\n");
+    printf("7. Update Post\n");
+    printf("8. Delete Post\n");
     printf("0. Exit\n");
     printf("Select an option: ");
 }
@@ -59,7 +62,7 @@ int main() {
     // 서버 주소 설정
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(SERVER_IP); // 서버 IP 주소
-    server_addr.sin_port = htons(PORT);                // 서버 포트
+    server_addr.sin_port = htons(PORT);                 // 서버 포트
 
     // 서버에 연결
     if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
@@ -83,7 +86,7 @@ int main() {
 
         switch (choice) {
             case 1: { // 회원가입
-                char user_id[50], password[50];
+                char user_id[20], password[20];
                 printf("Enter new username: ");
                 scanf("%s", user_id);
                 printf("Enter new password: ");
@@ -100,7 +103,7 @@ int main() {
             }
 
             case 2: { // 로그인
-                char user_id[50], password[50];
+                char user_id[20], password[20];
                 printf("Enter username: ");
                 scanf("%s", user_id);
                 printf("Enter password: ");
@@ -161,6 +164,67 @@ int main() {
                     printf("\n=== List of Posts ===\n%s", server_reply);
                 } else {
                     printf("Failed to receive posts from server.\n");
+                }
+                break;
+            }
+
+            case 6: { // 게시글 조회
+                int post_id;    
+                printf("Enter Post ID to view: ");
+                scanf("%d", &post_id);
+                getchar(); // 입력 버퍼 정리
+
+                // 서버에 게시글 조회 요청
+                sprintf(message, "READ_POST %d", post_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                // 서버에서 응답 수신
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                        server_reply[recv_size] = '\0'; // 문자열 끝 처리
+                    printf("\n=== Post Details ===\n%s", server_reply);
+                } else {
+                    printf("Failed to receive post details from server.\n");
+                }
+                break;
+            }
+
+            case 7: { // 게시글 수정
+                int post_id;
+                char title[20], content[50];
+    
+                printf("Enter Post ID to update: ");
+                scanf("%d", &post_id);
+                getchar(); // 버퍼 비우기
+    
+                printf("Enter new title: ");
+                fgets(title, sizeof(title), stdin);
+                title[strcspn(title, "\n")] = '\0';
+                
+                printf("Enter new content: ");
+                fgets(content, sizeof(content), stdin);
+                content[strcspn(content, "\n")] = '\0';
+                
+                sprintf(message, "UPDATE_POST %d \"%s\" \"%s\"", post_id, title, content);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                }
+                break;
+            }
+
+            case 8: { // 게시글 삭제
+                int post_id;
+                printf("Enter Post ID to delete: ");
+                scanf("%d", &post_id);
+                getchar(); // 입력 버퍼 정리
+
+                sprintf(message, "DELETE_POST %d", post_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
                 }
                 break;
             }

@@ -68,7 +68,7 @@ void *handle_client(void *socket_desc) {
 
         // 회원가입 처리
         if (strncmp(buffer, "REGISTER", 8) == 0) {
-            char user_id[50], password[50];
+            char user_id[MAX_USERID], password[MAX_PASSWORD];
             sscanf(buffer + 9, "%s %s", user_id, password); // username과 password 파싱
 
             int result = register_user(user_id, password);
@@ -84,7 +84,7 @@ void *handle_client(void *socket_desc) {
 
         // 로그인 처리
         if (strncmp(buffer, "LOGIN", 5) == 0) {
-            char user_id[50], password[50];
+            char user_id[MAX_USERID], password[MAX_PASSWORD];
             sscanf(buffer + 6, "%s %s", user_id, password); // username과 password 파싱    
 
             if (login_user(user_id, password) == 1) {
@@ -107,6 +107,7 @@ void *handle_client(void *socket_desc) {
         // 클라이언트에게 메시지 회신
         send(client_socket, "Message received", strlen("Message received"), 0);
 
+        // 게시글 작성 처리
         if (strncmp(buffer, "CREATE_POST", 11) == 0) {
             char title[MAX_TITLE], content[MAX_CONTENT];
             // 큰따옴표 기준으로 데이터 파싱
@@ -114,7 +115,7 @@ void *handle_client(void *socket_desc) {
             printf("Parsed title: %s\n", title);
             printf("Parsed content: %s\n", content);
 
-            char user_id[50] = {0};
+            char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
 
             pthread_mutex_lock(&mutex);
@@ -150,6 +151,127 @@ void *handle_client(void *socket_desc) {
                 send(client_socket, "No posts available.\n", strlen("No posts available.\n"), 0);
             }
             continue;   
+        }
+
+        // 단일 게시글 조회 처리
+        if (strncmp(buffer, "READ_POST", 9) == 0) {
+            int post_id;
+            sscanf(buffer + 10, "%d", &post_id); // post_id 파싱
+            printf("Requested Post ID: %d\n", post_id); // 디버깅 로그
+
+            Post post;
+            if (read_post(post_id, &post) == 1) {
+                // 게시글 데이터를 문자열로 변환하여 클라이언트에 전송
+                char response[BUFFER_SIZE];
+                snprintf(response, sizeof(response), 
+                         "ID: %d | User: %s | Date: %s | Views: %d | Likes: %d\nTitle: %s\nContent: %s\n", 
+                         post.post_id, post.user_id, post.date, post.views, post.likes, post.title, post.content);
+                send(client_socket, response, strlen(response), 0);
+            } else {
+                send(client_socket, "Post not found.\n", strlen("Post not found.\n"), 0);
+            }
+            continue;
+        }
+
+        // 게시글 수정 처리
+        if (strncmp(buffer, "UPDATE_POST", 11) == 0) {
+            int post_id;
+            char title[MAX_TITLE], content[MAX_CONTENT];
+            char user_id[20] = {0};
+            int is_logged_in = 0;
+            
+            // 로그인 상태 확인
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+            
+            if (!is_logged_in) {
+                send(client_socket, "UPDATE_FAIL_NOT_LOGGED_IN", 
+                     strlen("UPDATE_FAIL_NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
+            // 입력 파싱
+            sscanf(buffer + 12, "%d \"%[^\"]\" \"%[^\"]\"", 
+                   &post_id, title, content);
+    
+            // 게시글 작성자 확인
+            Post post;
+            if (read_post(post_id, &post) != 1) {
+                send(client_socket, "UPDATE_FAIL_POST_NOT_FOUND", 
+                     strlen("UPDATE_FAIL_POST_NOT_FOUND"), 0);
+                continue;
+            }
+    
+            // 작성자만 수정 가능
+            if (strcmp(post.user_id, user_id) != 0) {
+                send(client_socket, "UPDATE_FAIL_NOT_AUTHOR", 
+                     strlen("UPDATE_FAIL_NOT_AUTHOR"), 0);
+                continue;
+            }
+    
+            // 게시글 수정
+            if (update_post(post_id, title, content) == 1) {
+                send(client_socket, "UPDATE_SUCCESS", strlen("UPDATE_SUCCESS"), 0);
+            } else {
+                send(client_socket, "UPDATE_FAIL", strlen("UPDATE_FAIL"), 0);
+            }
+            continue;
+        }
+
+        // 게시글 삭제 처리
+        if (strncmp(buffer, "DELETE_POST", 11) == 0) {
+            int post_id;
+            char user_id[20] = {0};
+            int is_logged_in = 0;
+            
+            // 로그인 상태 확인
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+            
+            if (!is_logged_in) {
+                send(client_socket, "DELETE_FAIL_NOT_LOGGED_IN", 
+                     strlen("DELETE_FAIL_NOT_LOGGED_IN"), 0);   
+                continue;
+            }
+
+            sscanf(buffer + 12, "%d", &post_id);
+
+            // 게시글 작성자 확인
+            Post post;
+            if (read_post(post_id, &post) != 1) {
+                send(client_socket, "DELETE_FAIL_POST_NOT_FOUND", 
+                     strlen("DELETE_FAIL_POST_NOT_FOUND"), 0);
+                continue;
+            }
+
+            // 작성자만 삭제 가능
+            if (strcmp(post.user_id, user_id) != 0) {
+                send(client_socket, "DELETE_FAIL_NOT_AUTHOR", 
+                        strlen("DELETE_FAIL_NOT_AUTHOR"), 0);
+                continue;
+            }
+
+            // 게시글 삭제
+            if (delete_post(post_id) == 1) {
+                send(client_socket, "DELETE_SUCCESS", strlen("DELETE_SUCCESS"), 0);
+            } else {
+                send(client_socket, "DELETE_FAIL", strlen("DELETE_FAIL"), 0);
+            }
+            continue;
         }
     }
 

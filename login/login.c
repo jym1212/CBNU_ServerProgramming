@@ -11,7 +11,7 @@ int check_id(char *id){
         return 0;
     }
 
-    char file_id[MAX_USERNAME];
+    char file_id[MAX_USERID];
     char file_password[MAX_PASSWORD];
 
     while (fscanf(fp, "%s %s", file_id, file_password) != EOF) {
@@ -33,7 +33,7 @@ int register_user(char *user_id, char *password) {
         return -1; 
     }
 
-    char file_id[MAX_USERNAME];
+    char file_id[MAX_USERID];
     char file_password[MAX_PASSWORD];
 
     // 중복 아이디 확인
@@ -58,7 +58,7 @@ int login_user(char *user_id, char *password) {
         return 0;
     }
 
-    char file_id[MAX_USERNAME];
+    char file_id[MAX_USERID];
     char file_password[MAX_PASSWORD];
     while (fscanf(fp, "%s %s", file_id, file_password) != EOF) {
         if (strcmp(user_id, file_id) == 0 && strcmp(password, file_password) == 0) {
