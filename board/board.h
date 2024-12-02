@@ -1,11 +1,6 @@
 #ifndef BOARD_H
 #define BOARD_H
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-
 #define MAX_TITLE 20
 #define MAX_CONTENT 50
 

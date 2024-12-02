@@ -4,6 +4,9 @@
 #include <pthread.h>  // POSIX 스레드 사용
 #include <unistd.h>   // close 함수 사용
 #include <arpa/inet.h> // 소켓 함수 사용
+#include <sys/socket.h> // send, recv 함수 사용
+#include <netinet/in.h> // 소켓 구조체 정의
+#include "../chat/chat.h" // 채팅 관련 함수 사용
 
 #define SERVER_IP "127.0.0.1" // 서버 IP (로컬 테스트용)
 #define PORT 8080            // 서버 포트
@@ -13,6 +16,12 @@
 #define MAX_PASSWORD 20
 #define MAX_TITLE 20
 #define MAX_CONTENT 50
+#define MAX_CHAT_USERS 10
+#define MAX_CHAT_ROOMS 5
+#define MAX_ROOM_NAME 50
+#define MAX_MESSAGE 100
+
+extern ChatRoom chat_rooms[MAX_CHAT_ROOMS];
 
 // receive_messages 함수 수정
 void *receive_messages(void *socket_desc) {
@@ -42,12 +51,16 @@ void display_menu() {
     printf("\n=== Menu ===\n");
     printf("1. Register\n");
     printf("2. Login\n");
-    printf("3. Send Message\n");
-    printf("4. Create Posts\n");
-    printf("5. View ALL Posts\n");
-    printf("6. Read Post\n");
-    printf("7. Update Post\n");
-    printf("8. Delete Post\n");
+    printf("3. Create Posts\n");
+    printf("4. View ALL Posts\n");
+    printf("5. Read Post\n");
+    printf("6. Update Post\n");
+    printf("7. Delete Post\n");
+    printf("8. Create Chatting\n");
+    printf("9. View Chatting List\n");
+    printf("10. Join Chatting\n");
+    printf("11. Send Message\n");
+    printf("12. Leave Chatting\n");
     printf("0. Exit\n");
     printf("Select an option: ");
 }
@@ -127,22 +140,7 @@ int main() {
                 break;
             }
 
-            case 3: { // 메시지 송신
-                printf("Enter message: ");
-                fgets(message, BUFFER_SIZE, stdin);
-                message[strcspn(message, "\n")] = '\0'; // 개행 문자 제거
-
-                if (strlen(message) == 0) {
-                    continue; // 빈 메시지는 전송하지 않음
-                }
-
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                }
-                break;
-            }
-
-            case 4: { // 게시글 생성
+            case 3: { // 게시글 생성
                 // 로그인 상태 확인 요청    
                 sprintf(message, "CHECK_LOGIN");
                 if(send(client_socket, message, strlen(message), 0) < 0){
@@ -188,7 +186,7 @@ int main() {
                 break;
             }
 
-            case 5: { // 게시글 목록 조회
+            case 4: { // 게시글 목록 조회
                 sprintf(message, "LIST_POSTS");
                 if(send(client_socket, message, strlen(message), 0) < 0){
                     perror("Send failed");
@@ -209,7 +207,7 @@ int main() {
                 break;
             }
 
-            case 6: { // 게시글 조회
+            case 5: { // 게시글 조회
                 // 로그인 상태 확인 요청
                 sprintf(message, "CHECK_LOGIN");
                 if(send(client_socket, message, strlen(message), 0) < 0){
@@ -250,7 +248,7 @@ int main() {
                 break;
             }
 
-            case 7: { // 게시글 수정
+            case 6: { // 게시글 수정
                 // 로그인 상태 확인 요청
                 sprintf(message, "CHECK_LOGIN");
                 if(send(client_socket, message, strlen(message), 0) < 0){
@@ -301,7 +299,7 @@ int main() {
                 break;
             }
 
-            case 8: { // 게시글 삭제
+            case 7: { // 게시글 삭제
                 // 로그인 상태 확인 요청
                 sprintf(message, "CHECK_LOGIN");
                 if(send(client_socket, message, strlen(message), 0) < 0){
@@ -337,6 +335,124 @@ int main() {
                 if (recv_size > 0) {
                     server_reply[recv_size] = '\0';
                     printf("%s\n", server_reply);
+                    sleep(1);
+                }
+                break;
+            }
+
+            case 8: { // 채팅방 생성
+                char room_name[MAX_ROOM_NAME];
+                printf("Enter chat room name: ");
+                fgets(room_name, sizeof(room_name), stdin);
+                room_name[strcspn(room_name, "\n")] = '\0';
+
+                sprintf(message, "CREATE_CHAT %s", room_name);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    printf("%s\n", server_reply);
+                    sleep(1);
+                }
+                break;
+            }
+
+            case 9: { // 채팅방 목록 조회
+                sprintf(message, "VIEW_CHAT_LIST");
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char chat_list[BUFFER_SIZE * 4];
+                ssize_t recv_size = recv(client_socket, chat_list, sizeof(chat_list) - 1, 0);
+                if (recv_size > 0) {
+                    chat_list[recv_size] = '\0';
+                    printf("%s", chat_list);
+                    sleep(1);
+                }
+                break;
+            }
+
+            case 10: { // 채팅방 참여
+                int room_id;
+                printf("Enter chat room ID to join: ");
+                scanf("%d", &room_id);
+                getchar(); // 입력 버퍼 클리어
+
+                sprintf(message, "JOIN_CHAT %d", room_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "JOIN_CHAT_SUCCESS") == 0) {
+                        printf("Successfully joined chat room %d\n", room_id);
+                    } else {
+                        printf("Failed to join chat room: %s\n", server_reply);
+                    }
+                    sleep(1);
+                }
+                break;
+            }
+
+            case 11: { // 메시지 송신
+                int room_id;
+                char chat_message[MAX_MESSAGE];
+                printf("Enter chat room ID to send message: ");
+                scanf("%d", &room_id);
+                getchar(); // 입력 버퍼 클리어
+
+                printf("Enter message: ");
+                fgets(chat_message, sizeof(chat_message), stdin);
+                chat_message[strcspn(chat_message, "\n")] = '\0';
+
+                sprintf(message, "SEND_MESSAGE %d %s", room_id, chat_message);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    printf("%s\n", server_reply);
+                    sleep(1);
+                }
+                break;
+            }
+
+            case 12: { // 채팅방 퇴장
+                int room_id;
+                printf("Enter chat room ID to leave: ");
+                scanf("%d", &room_id);
+                getchar(); // 입력 버퍼 클리어
+
+                sprintf(message, "LEAVE_CHAT %d", room_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char server_reply[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                if (recv_size > 0) {
+                    server_reply[recv_size] = '\0';
+                    if (strcmp(server_reply, "LEAVE_CHAT_SUCCESS") == 0) {
+                        printf("Successfully left chat room %d\n", room_id);
+                    } else {
+                        printf("Failed to leave chat room: %s\n", server_reply);
+                    }
                     sleep(1);
                 }
                 break;

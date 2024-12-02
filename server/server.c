@@ -7,10 +7,14 @@
 
 #include "../login/login.h" // 로그인 및 회원가입 
 #include "../board/board.h" // 게시판 
+#include "../chat/chat.h" // 채팅 
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
 #define MAX_CLIENTS 10
+
+// 채팅방 관리를 위한 전역 변수
+extern ChatRoom chat_rooms[MAX_CHAT_ROOMS];
 
 typedef struct {
     int socket;
@@ -124,9 +128,6 @@ void *handle_client(void *socket_desc) {
             }
             continue;
         }
-
-        // 클라이언트에게 메시지 회신
-        send(client_socket, "Message received", strlen("Message received"), 0);
 
         // 게시글 작성 처리
         if (strncmp(buffer, "CREATE_POST", 11) == 0) {
@@ -325,6 +326,83 @@ void *handle_client(void *socket_desc) {
             }
             continue;
         }
+
+         // 채팅방 생성 처리
+        if (strncmp(buffer, "CREATE_CHAT", 11) == 0) {
+            char room_name[MAX_ROOM_NAME];
+            char creator_id[MAX_USERID] = {0};
+            
+            // 현재 클라이언트의 user_id 찾기
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strncpy(creator_id, clients[i].user_id, MAX_USERID - 1);
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+            
+            sscanf(buffer + 12, "%s", room_name);
+            
+            int room_id = create_chat_room(room_name, creator_id);
+            if (room_id != -1) {
+                send(client_socket, "CREATE_CHAT_SUCCESS", strlen("CREATE_CHAT_SUCCESS"), 0);
+            } else {
+                send(client_socket, "CREATE_CHAT_FAIL", strlen("CREATE_CHAT_FAIL"), 0);
+            }
+            continue;
+        }
+
+        // 채팅방 목록 조회 처리
+        if (strncmp(buffer, "VIEW_CHAT_LIST", 14) == 0) {
+            char chat_list[BUFFER_SIZE * 4] = {0};
+            view_chat_rooms(chat_list, sizeof(chat_list));
+            send(client_socket, chat_list, strlen(chat_list), 0);
+            continue;
+        }
+
+        // 채팅방 참여 처리
+        if (strncmp(buffer, "JOIN_CHAT", 9) == 0) {
+            int room_id;
+            sscanf(buffer + 10, "%d", &room_id);
+
+            int result = join_chat_room(room_id, client_socket);
+            if (result == 0) {
+                send(client_socket, "JOIN_CHAT_SUCCESS", strlen("JOIN_CHAT_SUCCESS"), 0);
+            } else {
+                send(client_socket, "JOIN_CHAT_FAIL", strlen("JOIN_CHAT_FAIL"), 0);
+            }
+            continue;
+        }
+
+        // 메시지 송신 처리
+        if (strncmp(buffer, "SEND_MESSAGE", 12) == 0) {
+            int room_id;
+            char message[MAX_MESSAGE];
+            sscanf(buffer + 13, "%d %[^\n]", &room_id, message);
+
+            broadcast_message(room_id, client_socket, message);
+            send(client_socket, "MESSAGE_SENT", strlen("MESSAGE_SENT"), 0);
+            continue;
+        }
+
+        // 채팅방 퇴장 처리
+        if (strncmp(buffer, "LEAVE_CHAT", 10) == 0) {
+            int room_id;
+            sscanf(buffer + 11, "%d", &room_id);
+
+            int result = leave_chat_room(room_id, client_socket);
+            if (result == 0) {
+                send(client_socket, "LEAVE_CHAT_SUCCESS", strlen("LEAVE_CHAT_SUCCESS"), 0);
+            } else {
+                send(client_socket, "LEAVE_CHAT_FAIL", strlen("LEAVE_CHAT_FAIL"), 0);
+            }
+            continue;
+        }
+
+        // 클라이언트에게 메시지 회신
+        send(client_socket, "Message received", strlen("Message received"), 0);
+        
     }
 
     // 클라이언트 연결 종료 처리
@@ -367,6 +445,10 @@ int main() {
     }
     printf("Waiting for incoming connections...\n");
 
+    // 채팅방 정보 로드
+    init_chat_rooms();
+    load_chat_rooms();
+    
     // 클라이언트 연결 수락
     while ((client_socket = accept(server_socket, (struct sockaddr *)&client_addr, &client_addr_size)) >= 0) {
         initialize_client_state(client_socket);
