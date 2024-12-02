@@ -57,22 +57,6 @@ void remove_client_state(int socket) {
     pthread_mutex_unlock(&mutex);
 }
 
-// 클라이언트의 로그인 상태를 확인하는 함수 추가
-int check_client_login(int client_socket) {
-    pthread_mutex_lock(&mutex);
-    int is_logged_in = 0;
-    
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (clients[i].socket == client_socket) {
-            is_logged_in = clients[i].is_logged_in;
-            break;
-        }
-    }
-    
-    pthread_mutex_unlock(&mutex);
-    return is_logged_in;
-}
-
 // 클라이언트 요청 처리 함수
 void *handle_client(void *socket_desc) {
     int client_socket = *(int *)socket_desc;
@@ -85,6 +69,27 @@ void *handle_client(void *socket_desc) {
     while ((recv_size = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
         buffer[recv_size] = '\0';
         printf("Client %d: %s\n", client_socket, buffer);
+
+        // 로그인 상태 확인 처리
+        if (strncmp(buffer, "CHECK_LOGIN", 11) == 0) {
+            int is_logged_in = 0;
+            
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            // 즉시 응답 전송
+            const char* response = is_logged_in ? "LOGGED_IN" : "NOT_LOGGED_IN";
+            if (send(client_socket, response, strlen(response), 0) < 0) {
+                perror("Send failed");
+            }
+            continue;
+        }
         
         // 회원가입 처리
         if (strncmp(buffer, "REGISTER", 8) == 0) {
@@ -102,17 +107,16 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 로그인 처리 부분 수정
+        // 로그인 처리
         if (strncmp(buffer, "LOGIN", 5) == 0) {
             char user_id[MAX_USERID], password[MAX_PASSWORD];
-            sscanf(buffer + 6, "%s %s", user_id, password);
+            sscanf(buffer + 6, "%s %s", user_id, password); // username과 password 파싱    
 
             if (login_user(user_id, password) == 1) {
                 pthread_mutex_lock(&mutex);
                 for (int i = 0; i < MAX_CLIENTS; i++) {
                     if (clients[i].socket == client_socket) {
-                        strncpy(clients[i].user_id, user_id, MAX_USERID - 1);
-                        clients[i].user_id[MAX_USERID - 1] = '\0';  // null 종료 문자 보장
+                        strcpy(clients[i].user_id, user_id);
                         clients[i].is_logged_in = 1;
                         break;
                     }
@@ -122,30 +126,6 @@ void *handle_client(void *socket_desc) {
             } else {
                 send(client_socket, "LOGIN_FAIL", strlen("LOGIN_FAIL"), 0);
             }
-            continue;
-        }
-
-        // 로그인 체크 처리 부분 수정
-        if (strncmp(buffer, "CHECK_LOGIN", 11) == 0) {
-            int is_logged_in = check_client_login(client_socket);
-            char response[32];
-            snprintf(response, sizeof(response), "%s", is_logged_in ? "LOGGED_IN" : "NOT_LOGGED_IN");
-            send(client_socket, response, strlen(response), 0);
-            continue;
-        }
-
-        //로그아웃
-        if (strncmp(buffer, "LOGOUT", 6) == 0) {
-            pthread_mutex_lock(&mutex);
-            for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i].socket == client_socket) {
-                    clients[i].is_logged_in = 0;
-                    memset(clients[i].user_id, 0, sizeof(clients[i].user_id));
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&mutex);
-            send(client_socket, "Logged out successfully", strlen("Logged out successfully"), 0);
             continue;
         }
 
@@ -351,16 +331,24 @@ void *handle_client(void *socket_desc) {
         if (strncmp(buffer, "CREATE_CHAT", 11) == 0) {
             char room_name[MAX_ROOM_NAME];
             char creator_id[MAX_USERID] = {0};
-            
-            // 현재 클라이언트의 user_id 찾기
+            char user_id[MAX_USERID] = {0};
+            int is_logged_in = 0;
+
             pthread_mutex_lock(&mutex);
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
                     strncpy(creator_id, clients[i].user_id, MAX_USERID - 1);
                     break;
                 }
             }
             pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
             
             sscanf(buffer + 12, "%s", room_name);
             
@@ -375,6 +363,23 @@ void *handle_client(void *socket_desc) {
 
         // 채팅방 목록 조회 처리
         if (strncmp(buffer, "VIEW_CHAT_LIST", 14) == 0) {
+            int is_logged_in = 0;
+
+            // 로그인 상태 확인
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+            
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
             char chat_list[BUFFER_SIZE * 4] = {0};
             view_chat_rooms(chat_list, sizeof(chat_list));
             send(client_socket, chat_list, strlen(chat_list), 0);
@@ -383,6 +388,24 @@ void *handle_client(void *socket_desc) {
 
         // 채팅방 참여 처리
         if (strncmp(buffer, "JOIN_CHAT", 9) == 0) {
+            char user_id[MAX_USERID] = {0};
+            int is_logged_in = 0;
+
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
             int room_id;
             sscanf(buffer + 10, "%d", &room_id);
 
@@ -397,6 +420,24 @@ void *handle_client(void *socket_desc) {
 
         // 메시지 송신 처리
         if (strncmp(buffer, "SEND_MESSAGE", 12) == 0) {
+            char user_id[MAX_USERID] = {0};
+            int is_logged_in = 0;
+            
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
             int room_id;
             char message[MAX_MESSAGE];
             sscanf(buffer + 13, "%d %[^\n]", &room_id, message);
@@ -408,6 +449,24 @@ void *handle_client(void *socket_desc) {
 
         // 채팅방 퇴장 처리
         if (strncmp(buffer, "LEAVE_CHAT", 10) == 0) {
+            char user_id[MAX_USERID] = {0};
+            int is_logged_in = 0;
+
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
             int room_id;
             sscanf(buffer + 11, "%d", &room_id);
 
