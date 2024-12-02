@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 #include <pthread.h>  // POSIX 스레드 사용
 #include <unistd.h>   // close 함수 사용
 #include <arpa/inet.h> // 소켓 함수 사용
@@ -29,25 +30,46 @@ int check_login_status(int client_socket) {
     char message[BUFFER_SIZE];
     char server_reply[BUFFER_SIZE];
     ssize_t recv_size;
-    struct timeval tv;
+    struct timeval tv_old, tv_new;
+    socklen_t len = sizeof(tv_old);
     
-    // 소켓 타임아웃 설정 (3초)
-    tv.tv_sec = 3;
-    tv.tv_usec = 0;
-    setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
+    // 기존 타임아웃 설정 저장
+    if (getsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv_old, &len) < 0) {
+        perror("Failed to get socket timeout");
+        return 0;
+    }
+    
+    // 새로운 타임아웃 설정 (0.5초)
+    tv_new.tv_sec = 0;
+    tv_new.tv_usec = 500000;  // 0.5초로 변경
+    if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv_new, sizeof(tv_new)) < 0) {
+        perror("Failed to set socket timeout");
+        return 0;
+    }
+
+    // 메시지 전송 전 짧은 대기
+    usleep(100000);  // 0.1초 대기
 
     sprintf(message, "CHECK_LOGIN");
     if (send(client_socket, message, strlen(message), 0) < 0) {
         perror("Send failed");
+        setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv_old, sizeof(tv_old));
         return 0;
     }
 
+    // 서버 응답 수신
     recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+    
+    // 이전 타임아웃 설정 복원
+    if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv_old, sizeof(tv_old)) < 0) {
+        perror("Failed to restore socket timeout");
+    }
+
     if (recv_size > 0) {
         server_reply[recv_size] = '\0';
         if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
             printf("Please log in first.\n");
-            sleep(1);
+            usleep(300000);
             return 0;
         }
         return 1;
@@ -56,15 +78,17 @@ int check_login_status(int client_socket) {
         return 0;
     } else {
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
-            printf("Please log in first.\n");
+            printf("Checking login status...\n");
+            usleep(100000);  // 0.1초 대기
+            return 0;
         } else {
             perror("Receive failed");
+            return 0;
         }
-        return 0;
     }
 }
 
-// receive_messages 함수 수정
+// receive_messages 함수 
 void *receive_messages(void *socket_desc) {
     int client_socket = *(int *)socket_desc;
     char server_reply[BUFFER_SIZE];
@@ -141,7 +165,6 @@ int main() {
 
     // 클라이언트 메뉴
     while (1) {
-        sleep(1);
         display_menu();
         scanf("%d", &choice);
         getchar(); // 입력 버퍼 클리어
@@ -210,7 +233,7 @@ int main() {
                 } else {
                     printf("Failed to receive server response.\n");
                 }
-                sleep(1);
+                usleep(300000);
                 break;
             }
 
@@ -233,7 +256,7 @@ int main() {
                 } else {
                     printf("Failed to receive posts from server.\n");
                 }
-                sleep(1);  // 메시지를 읽을 시간을 주기 위한 지연
+                usleep(300000);
                 break;
             }
 
@@ -263,7 +286,7 @@ int main() {
                 } else {
                     printf("Failed to receive post details.\n");
                 }
-                sleep(1);
+                usleep(300000);
                 break;
             }
 
@@ -301,7 +324,7 @@ int main() {
                     update_result[recv_size] = '\0';
                     printf("%s\n", update_result);
                 }
-                sleep(1);
+                usleep(300000);
                 break;
             }
 
@@ -329,7 +352,7 @@ int main() {
                     delete_result[recv_size] = '\0';
                     printf("%s\n", delete_result);
                 }
-                sleep(1);
+                usleep(300000);
                 break;
             }
 
@@ -356,7 +379,7 @@ int main() {
                 if (recv_size > 0) {
                     server_reply[recv_size] = '\0';
                     printf("%s\n", server_reply);
-                    sleep(1);
+                    usleep(300000);
                 }
                 break;
             }
@@ -379,7 +402,7 @@ int main() {
                 if (recv_size > 0) {
                     chat_list[recv_size] = '\0';
                     printf("%s", chat_list);
-                    sleep(1);
+                    usleep(300000);
                 }
                 break;
             }
@@ -412,7 +435,7 @@ int main() {
                         printf("Failed to join chat room: %s\n", join_result);
                     }
                 }
-                sleep(1);
+                usleep(300000);
                 break;
             }
 
@@ -445,7 +468,7 @@ int main() {
                     send_result[recv_size] = '\0';
                     printf("%s\n", send_result);
                 }
-                sleep(1);
+                usleep(300000);
                 break;
             }
 
@@ -476,7 +499,7 @@ int main() {
                     } else {
                         printf("Failed to leave chat room: %s\n", server_reply);
                     }
-                    sleep(1);
+                    usleep(300000);
                 }
                 break;
             }
