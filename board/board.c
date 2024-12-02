@@ -158,23 +158,39 @@ int delete_post(int post_id) {
 int list_posts(char *output, size_t output_size) {
     FILE *fp = fopen("boards.txt", "r");
     if (!fp) {
-        perror("Unable to open file.\n");
+        snprintf(output, output_size, "No posts available.\n");
+        return 0;  // 파일 열기 실패
+    }
+
+    char buffer[512];
+    output[0] = '\0';  // 출력 버퍼 초기화
+    int posts_found = 0;  // 게시글 존재 여부 확인
+
+    Post post;
+    while (fscanf(fp, "%d %s %s %d %d \"%[^\"]\" \"%[^\"]\"\n", 
+                  &post.post_id, post.user_id, post.date, 
+                  &post.views, &post.likes, post.title, post.content) == 7) {
+        posts_found = 1;
+        snprintf(buffer, sizeof(buffer), 
+                "ID: %d | User: %s | Date: %s | Views: %d | Likes: %d | Title: %s\n",
+                post.post_id, post.user_id, post.date, 
+                post.views, post.likes, post.title);
+        
+        // 버퍼 오버플로우 방지
+        if (strlen(output) + strlen(buffer) >= output_size - 1) {
+            break;
+        }
+        strcat(output, buffer);
+    }
+
+    fclose(fp);
+
+    if (!posts_found) {
         snprintf(output, output_size, "No posts available.\n");
         return 0;
     }
 
-    char buffer[512]; // 임시 버퍼
-    output[0] = '\0'; // 초기화
-
-    Post post;
-    while (fscanf(fp, "%d %s %s %d %d \"%[^\"]\" \"%[^\"]\"\n", &post.post_id, post.user_id, post.date, &post.views, &post.likes, post.title, post.content) == 7) {
-        snprintf(buffer, sizeof(buffer), "ID: %d | User: %s | Date: %s | Views: %d | Likes: %d | Title: %s | Content: %s\n",
-                 post.post_id, post.user_id, post.date, post.views, post.likes, post.title, post.content);
-        strncat(output, buffer, output_size - strlen(output) - 1); // 안전하게 문자열 추가
-    }
-
-    fclose(fp);
-    return 1;
+    return 1;  // 성공적으로 게시글 목록 반환
 }
 
 // 게시글 조회수 증가 함수

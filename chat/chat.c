@@ -8,7 +8,7 @@ ChatRoom chat_rooms[MAX_CHAT_ROOMS];
 
 void init_chat_rooms() {
     for (int i = 0; i < MAX_CHAT_ROOMS; i++) {
-        chat_rooms[i].room_id = 0;  // 0으로 초기화
+        chat_rooms[i].room_id = i + 1;  // 1부터 시작하도록 수정
         chat_rooms[i].room_name[0] = '\0';
         chat_rooms[i].creator_id[0] = '\0';
         chat_rooms[i].user_count = 0;
@@ -22,14 +22,14 @@ void init_chat_rooms() {
         char creator_id[MAX_USERID];
         int room_id, user_count;
         
-        // 파일에서 채팅방 정보 읽기
         while (fscanf(fp, "%d %s %s %d", &room_id, creator_id, room_name, &user_count) == 4) {
             if (room_id > 0 && room_id <= MAX_CHAT_ROOMS) {
-                chat_rooms[room_id - 1].room_id = room_id;
-                strncpy(chat_rooms[room_id - 1].room_name, room_name, MAX_ROOM_NAME - 1);
-                strncpy(chat_rooms[room_id - 1].creator_id, creator_id, MAX_USERID - 1);
-                chat_rooms[room_id - 1].user_count = user_count;
-                chat_rooms[room_id - 1].is_active = 1;
+                int idx = room_id - 1;  // 배열 인덱스로 변환
+                chat_rooms[idx].room_id = room_id;
+                strncpy(chat_rooms[idx].room_name, room_name, MAX_ROOM_NAME - 1);
+                strncpy(chat_rooms[idx].creator_id, creator_id, MAX_USERID - 1);
+                chat_rooms[idx].user_count = user_count;
+                chat_rooms[idx].is_active = 1;
             }
         }
         fclose(fp);
@@ -95,31 +95,33 @@ void view_chat_rooms(char* output, size_t size) {
 }
 
 int join_chat_room(int room_id, int user_socket) {
-    if (room_id < 0 || room_id >= MAX_CHAT_ROOMS || !chat_rooms[room_id].is_active) {
-        return -1;
+    if (room_id <= 0 || room_id > MAX_CHAT_ROOMS || !chat_rooms[room_id - 1].is_active) {
+        return -1;  // 잘못된 방 번호 또는 존재하지 않는 방
     }
     
-    if (chat_rooms[room_id].user_count >= MAX_CHAT_USERS) {
-        return -2;
+    int idx = room_id - 1;  // 배열 인덱스로 변환
+    if (chat_rooms[idx].user_count >= MAX_CHAT_USERS) {
+        return -2;  // 방이 가득 참
     }
     
-    chat_rooms[room_id].user_id[chat_rooms[room_id].user_count++] = user_socket;
+    chat_rooms[idx].user_id[chat_rooms[idx].user_count++] = user_socket;
     update_chat_file();  // 파일 업데이트
     return 0;
 }
 
 int leave_chat_room(int room_id, int user_socket) {
-    if (room_id < 0 || room_id >= MAX_CHAT_ROOMS || !chat_rooms[room_id].is_active) {
+    if (room_id <= 0 || room_id > MAX_CHAT_ROOMS || !chat_rooms[room_id - 1].is_active) {
         return -1;
     }
     
-    for (int i = 0; i < chat_rooms[room_id].user_count; i++) {
-        if (chat_rooms[room_id].user_id[i] == user_socket) {
+    int idx = room_id - 1;  // 배열 인덱스로 변환
+    for (int i = 0; i < chat_rooms[idx].user_count; i++) {
+        if (chat_rooms[idx].user_id[i] == user_socket) {
             // 해당 사용자를 제거하고 나머지 사용자들을 앞으로 당김
-            for (int j = i; j < chat_rooms[room_id].user_count - 1; j++) {
-                chat_rooms[room_id].user_id[j] = chat_rooms[room_id].user_id[j + 1];
+            for (int j = i; j < chat_rooms[idx].user_count - 1; j++) {
+                chat_rooms[idx].user_id[j] = chat_rooms[idx].user_id[j + 1];
             }
-            chat_rooms[room_id].user_count--;
+            chat_rooms[idx].user_count--;
             update_chat_file();  // 파일 업데이트
             return 0;
         }
@@ -147,7 +149,7 @@ void update_chat_file() {
         for (int i = 0; i < MAX_CHAT_ROOMS; i++) {
             if (chat_rooms[i].is_active) {
                 fprintf(fp, "%d %s %s %d\n", 
-                        i + 1, 
+                        chat_rooms[i].room_id,  // room_id는 이미 1부터 시작
                         chat_rooms[i].creator_id,
                         chat_rooms[i].room_name, 
                         chat_rooms[i].user_count);
