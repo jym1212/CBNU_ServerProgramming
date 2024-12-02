@@ -57,6 +57,22 @@ void remove_client_state(int socket) {
     pthread_mutex_unlock(&mutex);
 }
 
+// 클라이언트의 로그인 상태를 확인하는 함수 추가
+int check_client_login(int client_socket) {
+    pthread_mutex_lock(&mutex);
+    int is_logged_in = 0;
+    
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket == client_socket) {
+            is_logged_in = clients[i].is_logged_in;
+            break;
+        }
+    }
+    
+    pthread_mutex_unlock(&mutex);
+    return is_logged_in;
+}
+
 // 클라이언트 요청 처리 함수
 void *handle_client(void *socket_desc) {
     int client_socket = *(int *)socket_desc;
@@ -69,27 +85,6 @@ void *handle_client(void *socket_desc) {
     while ((recv_size = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
         buffer[recv_size] = '\0';
         printf("Client %d: %s\n", client_socket, buffer);
-
-        // 로그인 상태 확인 처리
-        if (strncmp(buffer, "CHECK_LOGIN", 11) == 0) {
-            int is_logged_in = 0;
-            
-            pthread_mutex_lock(&mutex);
-            for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i].socket == client_socket) {
-                    is_logged_in = clients[i].is_logged_in;
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&mutex);
-
-            if (!is_logged_in) {
-                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
-            } else {
-                send(client_socket, "LOGGED_IN", strlen("LOGGED_IN"), 0);
-            }
-            continue;
-        }
         
         // 회원가입 처리
         if (strncmp(buffer, "REGISTER", 8) == 0) {
@@ -107,16 +102,17 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 로그인 처리
+        // 로그인 처리 부분 수정
         if (strncmp(buffer, "LOGIN", 5) == 0) {
             char user_id[MAX_USERID], password[MAX_PASSWORD];
-            sscanf(buffer + 6, "%s %s", user_id, password); // username과 password 파싱    
+            sscanf(buffer + 6, "%s %s", user_id, password);
 
             if (login_user(user_id, password) == 1) {
                 pthread_mutex_lock(&mutex);
                 for (int i = 0; i < MAX_CLIENTS; i++) {
                     if (clients[i].socket == client_socket) {
-                        strcpy(clients[i].user_id, user_id);
+                        strncpy(clients[i].user_id, user_id, MAX_USERID - 1);
+                        clients[i].user_id[MAX_USERID - 1] = '\0';  // null 종료 문자 보장
                         clients[i].is_logged_in = 1;
                         break;
                     }
@@ -126,6 +122,30 @@ void *handle_client(void *socket_desc) {
             } else {
                 send(client_socket, "LOGIN_FAIL", strlen("LOGIN_FAIL"), 0);
             }
+            continue;
+        }
+
+        // 로그인 체크 처리 부분 수정
+        if (strncmp(buffer, "CHECK_LOGIN", 11) == 0) {
+            int is_logged_in = check_client_login(client_socket);
+            char response[32];
+            snprintf(response, sizeof(response), "%s", is_logged_in ? "LOGGED_IN" : "NOT_LOGGED_IN");
+            send(client_socket, response, strlen(response), 0);
+            continue;
+        }
+
+        //로그아웃
+        if (strncmp(buffer, "LOGOUT", 6) == 0) {
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    clients[i].is_logged_in = 0;
+                    memset(clients[i].user_id, 0, sizeof(clients[i].user_id));
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+            send(client_socket, "Logged out successfully", strlen("Logged out successfully"), 0);
             continue;
         }
 
