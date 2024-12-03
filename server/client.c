@@ -87,19 +87,22 @@ int check_login_status(int client_socket) {
     }
 }
 
-// receive_messages 함수 
+// receive_messages 함수 수정
 void *receive_messages(void *socket_desc) {
     int client_socket = *(int *)socket_desc;
     char server_reply[BUFFER_SIZE];
     ssize_t recv_size;
 
-    while ((recv_size = recv(client_socket, server_reply, BUFFER_SIZE, 0)) > 0) {
+    while ((recv_size = recv(client_socket, server_reply, BUFFER_SIZE - 1, 0)) > 0) {
         server_reply[recv_size] = '\0';
-        // NOT_LOGGED_IN 메시지는 메인 스레드에서 처리하도록 무시
-        if (strcmp(server_reply, "NOT_LOGGED_IN") != 0 && 
-            strcmp(server_reply, "LOGGED_IN") != 0) {
-            printf("\nServer: %s\n", server_reply);
+        
+        // "LOGGED_IN" 메시지는 무시
+        if (strcmp(server_reply, "LOGGED_IN") == 0) {
+            continue;
         }
+        
+        // 채팅 메시지나 다른 서버 응답만 출력
+        printf("\nServer: %s\n", server_reply);
     }
 
     if (recv_size == 0) {
@@ -130,6 +133,14 @@ void display_menu() {
     printf("12. Leave Chatting\n");
     printf("13. Delete Chatting\n");
     printf("0. Exit\n");
+    printf("Select an option: ");
+}
+
+// 채팅방 메뉴 표시 함수 추가
+void display_chat_menu() {
+    printf("\n=== Chat Menu ===\n");
+    printf("1. Send Message\n");
+    printf("2. Exit Chat Room\n");
     printf("Select an option: ");
 }
 
@@ -443,13 +454,13 @@ int main() {
                 continue;;
             }
 
+            // ... existing code ...
+
             case 10: { // 채팅방 참여
-                // 로그인 상태 확인 요청
                 if (!check_login_status(client_socket)) {
                     continue;
                 }
 
-                // 로그인 상태가 확인되면 채팅방 참여 진행
                 int room_id;
                 printf("Enter chat room ID to join: ");
                 scanf("%d", &room_id);
@@ -467,30 +478,69 @@ int main() {
                     join_result[recv_size] = '\0';
                     if (strcmp(join_result, "JOIN_CHAT_SUCCESS") == 0) {
                         printf("Successfully joined chat room %d\n", room_id);
-                        // 채팅방 화면으로 전환
+                        
+                        // 채팅방 메뉴 루프
+                        FILE *log_file;
+                        char log_buffer[BUFFER_SIZE];
+                        long last_pos = 0;
+
                         while (1) {
-                            printf("Enter message (or type 'exit' to leave): ");
-                            char chat_message[MAX_MESSAGE];
-                            fgets(chat_message, sizeof(chat_message), stdin);
-                            chat_message[strcspn(chat_message, "\n")] = '\0';
+                            display_chat_menu();
+                            int chat_choice;
+                            scanf("%d", &chat_choice);
+                            getchar(); // 입력 버퍼 클리어
 
-                            if (strcmp(chat_message, "exit") == 0) {
-                                break;
+                            switch (chat_choice) {
+                                case 1: { // 메시지 전송
+                                    printf("Enter message: ");
+                                    char chat_message[MAX_MESSAGE];
+                                    fgets(chat_message, sizeof(chat_message), stdin);
+                                    chat_message[strcspn(chat_message, "\n")] = '\0';
+
+                                    snprintf(message, sizeof(message), "SEND_MESSAGE %d %s %s", 
+                                            room_id, current_user, chat_message);
+                                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                                        perror("Send failed");
+                                    }
+                                    break;
+                                }
+                                case 2: { // 채팅방 나가기
+                                    sprintf(message, "LEAVE_CHAT %d", room_id);
+                                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                                        perror("Send failed");
+                                    }
+                                    printf("Leaving chat room...\n");
+                                    goto exit_chat;  // 채팅방 나가기
+                                }
+                                default:
+                                    printf("Invalid choice. Please try again.\n");
+                                    break;
                             }
 
-                            snprintf(message, sizeof(message), "SEND_MESSAGE %d %s %s", room_id, current_user, chat_message);
-                            if (send(client_socket, message, strlen(message), 0) < 0) {
-                                perror("Send failed");
-                                break;
+                            // 채팅 로그 파일 확인
+                            log_file = fopen("chatting_log.txt", "r");
+                            if (log_file != NULL) {
+                                fseek(log_file, last_pos, SEEK_SET);
+                                while (fgets(log_buffer, sizeof(log_buffer), log_file) != NULL) {
+                                    printf("%s", log_buffer);
+                                }
+                                last_pos = ftell(log_file);
+                                fclose(log_file);
                             }
+
+                            usleep(500000); // 0.5초 대기
                         }
+                        exit_chat:  // 채팅방 나가기 레이블
+                        continue;
                     } else {
                         printf("Failed to join chat room: %s\n", join_result);
                     }
                 }
                 usleep(300000);
-                continue;  
+                continue;
             }
+
+// ... existing code ...
 
             case 11: { // 채팅 메시지 전송
                 if (!check_login_status(client_socket)) {
@@ -564,9 +614,16 @@ int main() {
                 printf("Exiting client...\n");
                 
                 // chatting.txt 파일 비우기
-                FILE *fp = fopen("chatting.txt", "w");
-                if (fp != NULL) {
-                    fclose(fp);
+                FILE *fp1 = fopen("chatting.txt", "w");
+                if (fp1 != NULL) {
+                    fclose(fp1);
+                } else {
+                    perror("Failed to clear chatting.txt");
+                }
+
+                FILE *fp2 = fopen("chatting_log.txt", "w");
+                if (fp2 != NULL) {
+                    fclose(fp2);
                 } else {
                     perror("Failed to clear chatting.txt");
                 }

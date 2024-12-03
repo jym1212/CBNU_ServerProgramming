@@ -3,8 +3,12 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <pthread.h>  // pthread 라이브러리 사용
 
 ChatRoom chat_rooms[MAX_CHAT_ROOMS];
+
+// 뮤텍스 변수 선언
+extern pthread_mutex_t mutex;
 
 void init_chat_rooms() {
     for (int i = 0; i < MAX_CHAT_ROOMS; i++) {
@@ -128,17 +132,18 @@ int leave_chat_room(int room_id, int user_socket) {
     return -1;
 }
 
-void broadcast_message(int room_id, int sender_socket, const char* message) {
+void broadcast_message(int room_id, int sender_socket __attribute__((unused)), const char* message) {
     if (room_id < 0 || room_id >= MAX_CHAT_ROOMS || !chat_rooms[room_id].is_active) {
         return;
     }
     
+    pthread_mutex_lock(&mutex);  // 뮤텍스 잠금 추가
     for (int i = 0; i < chat_rooms[room_id].user_count; i++) {
         int receiver_socket = chat_rooms[room_id].user_id[i];
-        if (receiver_socket != sender_socket) {
-            send(receiver_socket, message, strlen(message), 0);
-        }
+        // 발신자를 포함한 모든 참여자에게 메시지 전송
+        send(receiver_socket, message, strlen(message), 0);
     }
+    pthread_mutex_unlock(&mutex);  // 뮤텍스 해제
 }
 
 // 채팅방 정보를 파일에 업데이트하는 함수 수정

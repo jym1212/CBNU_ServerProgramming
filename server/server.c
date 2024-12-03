@@ -4,6 +4,7 @@
 #include <pthread.h> // POSIX 스레드 
 #include <unistd.h>  // close 함수 
 #include <arpa/inet.h> // 소켓 관련 함수 
+#include <time.h>  // 타임스탬프 기능을 위한 헤더
 
 #include "../login/login.h" // 로그인 및 회원가입 
 #include "../board/board.h" // 게시판 
@@ -66,7 +67,6 @@ void *handle_client(void *socket_desc) {
 
     printf("Client connected. Socket: %d\n", client_socket);
 
-    // 클라이언트와 메시지 송수신
     while ((recv_size = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
         buffer[recv_size] = '\0';
         printf("Client %d: %s\n", client_socket, buffer);
@@ -387,117 +387,95 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 채팅방 참여 처리
+        // JOIN_CHAT 명령 처리
         if (strncmp(buffer, "JOIN_CHAT", 9) == 0) {
-            char user_id[MAX_USERID] = {0};
-            int is_logged_in = 0;
-
-            pthread_mutex_lock(&mutex);
-            for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i].socket == client_socket) {
-                    strcpy(user_id, clients[i].user_id);
-                    is_logged_in = clients[i].is_logged_in;
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&mutex);
-
-            if (!is_logged_in) {
-                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+            int room_id;
+            sscanf(buffer, "JOIN_CHAT %d", &room_id);
+            
+            if (room_id <= 0 || room_id > MAX_CHAT_ROOMS) {
+                send(client_socket, "Invalid room ID", strlen("Invalid room ID"), 0);
                 continue;
             }
 
-            int room_id;
-            sscanf(buffer + 10, "%d", &room_id);
+            int idx = room_id - 1;
+            if (!chat_rooms[idx].is_active) {
+                send(client_socket, "Chat room does not exist", strlen("Chat room does not exist"), 0);
+                continue;
+            }
 
-            int result = join_chat_room(room_id, client_socket);
-            if (result == 0) {
+            pthread_mutex_lock(&mutex);
+            if (chat_rooms[idx].user_count < MAX_CHAT_USERS) {
+                chat_rooms[idx].user_id[chat_rooms[idx].user_count++] = client_socket;
+                pthread_mutex_unlock(&mutex);
                 send(client_socket, "JOIN_CHAT_SUCCESS", strlen("JOIN_CHAT_SUCCESS"), 0);
             } else {
-                send(client_socket, "JOIN_CHAT_FAIL", strlen("JOIN_CHAT_FAIL"), 0);
+                pthread_mutex_unlock(&mutex);
+                send(client_socket, "Chat room is full", strlen("Chat room is full"), 0);
             }
             continue;
         }
 
-        // 채팅 메시지 처리
+        // LEAVE_CHAT 명령 처리
+        if (strncmp(buffer, "LEAVE_CHAT", 10) == 0) {
+            int room_id;
+            sscanf(buffer, "LEAVE_CHAT %d", &room_id);
+            
+            if (leave_chat_room(room_id, client_socket) == 0) {
+                send(client_socket, "LEAVE_CHAT_SUCCESS", strlen("LEAVE_CHAT_SUCCESS"), 0);
+            } else {
+                send(client_socket, "Failed to leave chat room", strlen("Failed to leave chat room"), 0);
+            }
+            continue;
+        }
+
+        // SEND_MESSAGE 명령 처리
         if (strncmp(buffer, "SEND_MESSAGE", 12) == 0) {
             int room_id;
             char message_content[MAX_MESSAGE];
             char sender_id[MAX_USERID];
             
-            // 메시지 형식: "SEND_MESSAGE room_id sender_id message_content"
             sscanf(buffer, "SEND_MESSAGE %d %s %[^\n]", &room_id, sender_id, message_content);
             
             // 채팅방 존재 여부 및 사용자가 해당 채팅방에 있는지 확인
             int is_member = 0;
             pthread_mutex_lock(&mutex);
-            for (int i = 0; i < MAX_CHAT_ROOMS; i++) {
-                if (chat_rooms[i].room_id == room_id && chat_rooms[i].is_active) {
-                    // 해당 사용자가 채팅방 멤버인지 확인
-                    for (int j = 0; j < chat_rooms[i].user_count; j++) {
-                        if (chat_rooms[i].user_id[j] == client_socket) {
-                            is_member = 1;
-                            break;
-                        }
+            int idx = room_id - 1;
+            if (idx >= 0 && idx < MAX_CHAT_ROOMS && chat_rooms[idx].is_active) {
+                for (int j = 0; j < chat_rooms[idx].user_count; j++) {
+                    if (chat_rooms[idx].user_id[j] == client_socket) {
+                        is_member = 1;
+                        break;
                     }
-                    break;
                 }
             }
             pthread_mutex_unlock(&mutex);
 
             if (!is_member) {
-                send(client_socket, "You are not a member of this chat room.", 
-                    strlen("You are not a member of this chat room."), 0);
+                send(client_socket, "You are not a member of this chat room.\n", 
+                    strlen("You are not a member of this chat room.\n"), 0);
                 continue;
             }
 
-            // 채팅방의 모든 멤버에게 메시지 전송
-            char formatted_message[BUFFER_SIZE];
-            snprintf(formatted_message, sizeof(formatted_message), 
-                    "[Room %d] %s: %s", room_id, sender_id, message_content);
-            
-            broadcast_message(room_id, client_socket, formatted_message);
+            // 채팅 로그 파일에 메시지 저장
+            char log_message[BUFFER_SIZE];
+            time_t now = time(NULL);
+            char timestamp[26];
+            strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+            snprintf(log_message, sizeof(log_message), "[%s] Room %d - %s: %s\n", 
+                    timestamp, room_id, sender_id, message_content);
+
+            FILE *fp = fopen("chatting_log.txt", "a");
+            if (fp != NULL) {
+                fprintf(fp, "%s", log_message);
+                fclose(fp);
+            }
+
+            // 채팅방의 모든 멤버에게 로그 메시지 전송
+            broadcast_message(room_id - 1, client_socket, log_message);
             continue;
         }
-
-        // 채팅방 퇴장 처리
-        if (strncmp(buffer, "LEAVE_CHAT", 10) == 0) {
-            char user_id[MAX_USERID] = {0};
-            int is_logged_in = 0;
-
-            pthread_mutex_lock(&mutex);
-            for (int i = 0; i < MAX_CLIENTS; i++) {
-                if (clients[i].socket == client_socket) {
-                    strcpy(user_id, clients[i].user_id);
-                    is_logged_in = clients[i].is_logged_in;
-                    break;
-                }
-            }
-            pthread_mutex_unlock(&mutex);
-
-            if (!is_logged_in) {
-                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
-                continue;
-            }
-
-            int room_id;
-            sscanf(buffer + 11, "%d", &room_id);
-
-            int result = leave_chat_room(room_id, client_socket);
-            if (result == 0) {
-                send(client_socket, "LEAVE_CHAT_SUCCESS", strlen("LEAVE_CHAT_SUCCESS"), 0);
-            } else {
-                send(client_socket, "LEAVE_CHAT_FAIL", strlen("LEAVE_CHAT_FAIL"), 0);
-            }
-            continue;
-        }
-
-        // 클라이언트에게 메시지 회신
-        send(client_socket, "Message received", strlen("Message received"), 0);
-        
     }
 
-    // 클라이언트 연결 종료 처리
     printf("Client disconnected. Socket: %d\n", client_socket);
     remove_client_state(client_socket);
     close(client_socket);
