@@ -23,7 +23,7 @@ typedef struct {
     int user_sockets[MAX_CHAT_USERS];
     int user_count;
     int is_active;
-    int current_room;
+    int current_room_id;
 } ChatRoom;
 
 void init_chat_rooms();

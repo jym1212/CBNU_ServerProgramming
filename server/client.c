@@ -467,6 +467,23 @@ int main() {
                     join_result[recv_size] = '\0';
                     if (strcmp(join_result, "JOIN_CHAT_SUCCESS") == 0) {
                         printf("Successfully joined chat room %d\n", room_id);
+                        // 채팅방 화면으로 전환
+                        while (1) {
+                            printf("Enter message (or type 'exit' to leave): ");
+                            char chat_message[MAX_MESSAGE];
+                            fgets(chat_message, sizeof(chat_message), stdin);
+                            chat_message[strcspn(chat_message, "\n")] = '\0';
+
+                            if (strcmp(chat_message, "exit") == 0) {
+                                break;
+                            }
+
+                            snprintf(message, sizeof(message), "SEND_MESSAGE %d %s %s", room_id, current_user, chat_message);
+                            if (send(client_socket, message, strlen(message), 0) < 0) {
+                                perror("Send failed");
+                                break;
+                            }
+                        }
                     } else {
                         printf("Failed to join chat room: %s\n", join_result);
                     }
@@ -545,6 +562,15 @@ int main() {
             
             case 0: { // 종료
                 printf("Exiting client...\n");
+                
+                // chatting.txt 파일 비우기
+                FILE *fp = fopen("chatting.txt", "w");
+                if (fp != NULL) {
+                    fclose(fp);
+                } else {
+                    perror("Failed to clear chatting.txt");
+                }
+                
                 close(client_socket);
                 return 0;
             }

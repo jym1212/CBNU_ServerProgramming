@@ -20,6 +20,7 @@ typedef struct {
     int socket;
     char user_id[MAX_USERID];
     int is_logged_in;
+    int current_room_id;
 } ClientState;
 
 // 클라이언트 소켓 관리
