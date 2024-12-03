@@ -139,6 +139,7 @@ int main() {
     char message[BUFFER_SIZE];
     pthread_t thread_id;
     int choice;
+    static char current_user[MAX_USERID];
 
     // 소켓 생성
     client_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -166,7 +167,7 @@ int main() {
         return 1;
     }
 
-    usleep(300000);
+    usleep(500000);
 
     // 클라이언트 메뉴
     while (1) {
@@ -206,7 +207,6 @@ int main() {
 
             case 2: { // 로그인
                 char user_id[MAX_USERID], password[MAX_PASSWORD];
-                static char current_user[MAX_USERID];  // 로그인한 사용자 ID 저장용 정적 변수
                 
                 printf("Enter username: ");
                 scanf("%s", user_id);
@@ -218,7 +218,7 @@ int main() {
                 sprintf(message, "LOGIN %s %s", user_id, password);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
-                    continue;  // 메뉴로 돌아가기
+                    continue;
                 }
 
                 // 서버 응답 수신
@@ -229,13 +229,13 @@ int main() {
                     printf("Server: %s\n", login_result);
                     
                     if (strcmp(login_result, "LOGIN_SUCCESS") == 0) {
-                        strncpy(current_user, user_id, MAX_USERID - 1);  // 로그인 성공 시 사용자 ID 저장
-                        current_user[MAX_USERID - 1] = '\0';  // null 종료 문자 보장
+                        strncpy(current_user, user_id, MAX_USERID - 1);
+                        current_user[MAX_USERID - 1] = '\0';
                     }
                 } else {
                     printf("Failed to receive server response.\n");
                 }
-                usleep(300000);  // 메시지를 읽을 시간 제공
+                usleep(300000);
                 continue;  // 메뉴로 돌아가기
             }
 
@@ -270,7 +270,7 @@ int main() {
                     printf("Failed to receive server response.\n");
                 }
                 usleep(300000);
-                break;
+                continue;;
             }
 
             case 4: { // 게시글 목록 조회
@@ -323,7 +323,7 @@ int main() {
                     printf("Failed to receive post details.\n");
                 }
                 usleep(300000);
-                break;
+                continue;;
             }
 
             case 6: { // 게시글 수정
@@ -361,7 +361,7 @@ int main() {
                     printf("%s\n", update_result);
                 }
                 usleep(300000);
-                break;
+                continue;;
             }
 
             case 7: { // 게시글 삭제
@@ -389,7 +389,7 @@ int main() {
                     printf("%s\n", delete_result);
                 }
                 usleep(300000);
-                break;
+                continue;;
             }
 
             case 8: { // 채팅방 생성
@@ -417,7 +417,7 @@ int main() {
                     printf("%s\n", server_reply);
                     usleep(300000);
                 }
-                break;
+                continue;;
             }
 
             case 9: { // 채팅방 목록 조회
@@ -440,7 +440,7 @@ int main() {
                     printf("%s", chat_list);
                     usleep(300000);
                 }
-                break;
+                continue;;
             }
 
             case 10: { // 채팅방 참여
@@ -458,7 +458,7 @@ int main() {
                 sprintf(message, "JOIN_CHAT %d", room_id);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
-                    break;
+                    continue;
                 }
 
                 char join_result[BUFFER_SIZE];
@@ -472,7 +472,7 @@ int main() {
                     }
                 }
                 usleep(300000);
-                break;
+                continue;  
             }
 
             case 11: { // 채팅 메시지 전송
@@ -540,7 +540,7 @@ int main() {
                     }
                     usleep(300000);
                 }
-                break;
+                continue;
             }
             
             case 0: { // 종료

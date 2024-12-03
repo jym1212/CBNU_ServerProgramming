@@ -90,7 +90,6 @@ void view_chat_rooms(char* output, size_t size) {
         }
     }
     
-    // 푸터 추가
     snprintf(output + offset, size - offset, "================\n");
 }
 
@@ -149,7 +148,7 @@ void update_chat_file() {
         for (int i = 0; i < MAX_CHAT_ROOMS; i++) {
             if (chat_rooms[i].is_active) {
                 fprintf(fp, "%d %s %s %d\n", 
-                        chat_rooms[i].room_id,  // room_id는 이미 1부터 시작
+                        chat_rooms[i].room_id, 
                         chat_rooms[i].creator_id,
                         chat_rooms[i].room_name, 
                         chat_rooms[i].user_count);

@@ -20,6 +20,7 @@ typedef struct {
     char room_name[MAX_ROOM_NAME];
     char creator_id[MAX_USERID];
     int user_id[MAX_CHAT_USERS];
+    int user_sockets[MAX_CHAT_USERS];
     int user_count;
     int is_active;
     int current_room;
