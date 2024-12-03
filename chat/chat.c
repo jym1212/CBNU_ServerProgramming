@@ -184,3 +184,31 @@ void load_chat_rooms() {
         fclose(fp);
     }
 }
+
+int delete_chat_room(int room_id, const char* user_id) {
+    if (room_id <= 0 || room_id > MAX_CHAT_ROOMS) {
+        return -1;  // 잘못된 방 번호
+    }
+    
+    int idx = room_id - 1;
+    
+    // 방이 존재하지 않거나 이미 비활성화된 경우
+    if (!chat_rooms[idx].is_active) {
+        return -2;
+    }
+    
+    // 방 생성자만 삭제할 수 있음
+    if (strcmp(chat_rooms[idx].creator_id, user_id) != 0) {
+        return -3;
+    }
+    
+    // 방 삭제 처리
+    chat_rooms[idx].is_active = 0;
+    chat_rooms[idx].user_count = 0;
+    memset(chat_rooms[idx].user_id, 0, sizeof(int) * MAX_CHAT_USERS);
+    
+    // 파일 업데이트
+    update_chat_file();
+    
+    return 0;
+}

@@ -474,6 +474,51 @@ void *handle_client(void *socket_desc) {
             broadcast_message(room_id - 1, client_socket, log_message);
             continue;
         }
+
+        // DELETE_CHAT 명령 처리
+        if (strncmp(buffer, "DELETE_CHAT", 11) == 0) {
+            int room_id;
+            char user_id[MAX_USERID] = {0};
+            int is_logged_in = 0;
+            
+            // 로그인 상태 및 사용자 ID 확인
+            pthread_mutex_lock(&mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (clients[i].socket == client_socket) {
+                    strcpy(user_id, clients[i].user_id);
+                    is_logged_in = clients[i].is_logged_in;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&mutex);
+            
+            if (!is_logged_in) {
+                send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
+                continue;
+            }
+
+            sscanf(buffer + 12, "%d", &room_id);
+            
+            int result = delete_chat_room(room_id, user_id);
+            
+            switch(result) {
+                case 0:
+                    send(client_socket, "DELETE_CHAT_SUCCESS", strlen("DELETE_CHAT_SUCCESS"), 0);
+                    break;
+                case -1:
+                    send(client_socket, "DELETE_CHAT_FAIL_INVALID_ID", strlen("DELETE_CHAT_FAIL_INVALID_ID"), 0);
+                    break;
+                case -2:
+                    send(client_socket, "DELETE_CHAT_FAIL_NOT_EXIST", strlen("DELETE_CHAT_FAIL_NOT_EXIST"), 0);
+                    break;
+                case -3:
+                    send(client_socket, "DELETE_CHAT_FAIL_NOT_CREATOR", strlen("DELETE_CHAT_FAIL_NOT_CREATOR"), 0);
+                    break;
+                default:
+                    send(client_socket, "DELETE_CHAT_FAIL", strlen("DELETE_CHAT_FAIL"), 0);
+            }
+            continue;
+        }
     }
 
     printf("Client disconnected. Socket: %d\n", client_socket);

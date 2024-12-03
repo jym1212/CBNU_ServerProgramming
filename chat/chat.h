@@ -32,8 +32,8 @@ void view_chat_rooms(char* output, size_t size);
 int join_chat_room(int room_id, int user_socket);
 int leave_chat_room(int room_id, int user_socket);
 void broadcast_message(int room_id, int sender_socket, const char* message);
-int delete_chat_room(int room_id, int client_socket);
 void update_chat_file();
 void load_chat_rooms();
+int delete_chat_room(int room_id, const char* user_id);
 
 #endif

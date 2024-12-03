@@ -645,7 +645,43 @@ int main() {
                 }
                 continue;
             }
-            
+
+            case 13: { // 채팅방 삭제
+                if (!check_login_status(client_socket)) {
+                    continue;
+                }
+
+                int room_id;
+                printf("Enter chat room ID to delete: ");
+                scanf("%d", &room_id);
+                getchar(); // 입력 버퍼 클리어
+
+                sprintf(message, "DELETE_CHAT %d", room_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    continue;
+                }
+
+                char delete_result[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, delete_result, sizeof(delete_result) - 1, 0);
+                if (recv_size > 0) {
+                    delete_result[recv_size] = '\0';
+                    if (strcmp(delete_result, "DELETE_CHAT_SUCCESS") == 0) {
+                        printf("채팅방이 성공적으로 삭제되었습니다.\n");
+                    } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_NOT_CREATOR") == 0) {
+                        printf("채팅방 생성자만 삭제할 수 있습니다.\n");
+                    } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_NOT_EXIST") == 0) {
+                        printf("존재하지 않는 채팅방입니다.\n");
+                    } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_INVALID_ID") == 0) {
+                        printf("잘못된 채팅방 ID입니다.\n");
+                    } else {
+                        printf("채팅방 삭제에 실패했습니다.\n");
+                    }
+                }
+                usleep(300000);
+                continue;
+            }
+
             case 0: { // 종료
                 printf("Exiting client...\n");
                 
