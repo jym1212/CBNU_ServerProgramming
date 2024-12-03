@@ -69,7 +69,7 @@ int check_login_status(int client_socket) {
     if (recv_size > 0) {
         server_reply[recv_size] = '\0';
         if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
-            printf(" 로그인 후 이용 가능한 서비스입니다. \n");
+            printf("Please log in first.\n");
             usleep(300000);
             return 0;
         }
@@ -135,7 +135,7 @@ int main() {
     char message[BUFFER_SIZE];
     pthread_t thread_id;
     int choice1; //로그인출력
-    int choice2; //메인메뉴출력
+    int choice2; //메인메뉴출력 (게시판, 채팅)
     //int choice;
 
     // 소켓 생성
@@ -247,7 +247,195 @@ int main() {
     system("clear");
 
     // 메인 메뉴
+    while (1) {
+        
+        
 
+        print_file("main2.txt");
+        sleep(1);
+
+        printf("원하는 작업의 번호를 입력해 주세요 : ");
+        scanf("%d", &choice2);
+        getchar(); // 입력 버퍼 클리어
+        system("clear");
+        
+
+        switch (choice2) {
+            case 11: { // 게시글 목록 조회
+                if (!check_login_status(client_socket)) {
+                    continue;
+                }
+                
+                print_file("board_all.txt");
+
+                sprintf(message, "LIST_POSTS");
+                if(send(client_socket, message, strlen(message), 0) < 0){
+                    perror("Send failed");
+                    break;
+                }
+
+                char post_list[BUFFER_SIZE * 4];  // 서버로부터 받을 게시글 목록
+                ssize_t recv_size = recv(client_socket, post_list, sizeof(post_list) - 1, 0);
+                if (recv_size > 0) {
+                    post_list[recv_size] = '\0';
+                    printf("\n=== List of Posts ===\n%s", post_list);
+                } else {
+                    printf("Failed to receive posts from server.\n");
+                }
+                usleep(300000);
+                break;
+            }
+
+
+            case 12: { // 게시글 검색
+                // 로그인 상태 확인 요청
+                if (!check_login_status(client_socket)) {
+                    continue;
+                }
+
+                print_file("board_read.txt");
+
+                // 로그인 상태가 확인되면 게시글 조회 진행
+                int post_id;    
+                printf("Enter Post ID to view: ");
+                scanf("%d", &post_id);
+                getchar(); // 입력 버퍼 정리
+
+                sprintf(message, "READ_POST %d", post_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char post_details[BUFFER_SIZE * 4];  // 더 큰 버퍼 사용
+                ssize_t recv_size = recv(client_socket, post_details, sizeof(post_details) - 1, 0);
+                if (recv_size > 0) {
+                    post_details[recv_size] = '\0';
+                    printf("\n=== Post Details ===\n%s", post_details);
+                } else {
+                    printf("Failed to receive post details.\n");
+                }
+                usleep(300000);
+                break;
+            }
+
+            case 13: { // 게시글 생성
+                if (!check_login_status(client_socket)) {
+                    continue;
+                }
+
+                print_file("board_create.txt");
+
+                char title[MAX_TITLE], content[MAX_CONTENT];
+                printf(" 제목: ");
+                fgets(title, sizeof(title), stdin);
+                title[strcspn(title, "\n")] = '\0';
+
+                printf("Enter content: ");
+                fgets(content, sizeof(content), stdin);
+                content[strcspn(content, "\n")] = '\0';
+
+                sprintf(message, "CREATE_POST \"%s\" \"%s\"", title, content);
+                if(send(client_socket, message, strlen(message), 0) < 0){   
+                    perror("Send failed");
+                    break;
+                }
+
+                // 게시글 작성 결과 수신을 위한 지역 변수 사용
+                char create_result[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, create_result, sizeof(create_result) - 1, 0);
+                if (recv_size > 0) {
+                    create_result[recv_size] = '\0';
+                    printf("%s\n", create_result);
+                } else {
+                    printf("Failed to receive server response.\n");
+                }
+                usleep(300000);
+                system("clear");
+                break;
+            }
+
+            case 14: { // 게시글 수정
+                // 로그인 상태 확인 요청
+                if (!check_login_status(client_socket)) {
+                    continue;
+                }   
+
+                print_file("board_update.txt");
+
+                // 로그인 상태가 확인되면 게시글 수정 진행
+                int post_id;
+                char title[MAX_TITLE], content[MAX_CONTENT];
+
+                printf("Enter Post ID to update: ");
+                scanf("%d", &post_id);
+                getchar(); // 버퍼 비우기
+
+                print_file("mainlogin.txt");
+                printf("Enter new title: ");
+                fgets(title, sizeof(title), stdin);
+                title[strcspn(title, "\n")] = '\0';
+                
+                printf("Enter new content: ");
+                fgets(content, sizeof(content), stdin);
+                content[strcspn(content, "\n")] = '\0';
+                
+                sprintf(message, "UPDATE_POST %d \"%s\" \"%s\"", post_id, title, content);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char update_result[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, update_result, sizeof(update_result) - 1, 0);
+                if (recv_size > 0) {
+                    update_result[recv_size] = '\0';
+                    printf("%s\n", update_result);
+                }
+                usleep(300000);
+                system("clear");
+                break;
+            }
+
+            case 15: { // 게시글 삭제
+                // 로그인 상태 확인 요청
+                if (!check_login_status(client_socket)) {
+                    continue;
+                }
+
+                print_file("board_delete.txt");
+
+                // 로그인 상태가 확인되면 게시글 삭제 진행
+                int post_id;
+                printf("Enter Post ID to delete: ");
+                scanf("%d", &post_id);
+                getchar(); // 입력 버퍼 정리
+
+                sprintf(message, "DELETE_POST %d", post_id);
+                if (send(client_socket, message, strlen(message), 0) < 0) {
+                    perror("Send failed");
+                    break;
+                }
+
+                char delete_result[BUFFER_SIZE];
+                ssize_t recv_size = recv(client_socket, delete_result, sizeof(delete_result) - 1, 0);
+                if (recv_size > 0) {
+                    delete_result[recv_size] = '\0';
+                    printf("%s\n", delete_result);
+                }
+                usleep(300000);
+                system("clear");
+                break;
+            }
+
+            
+            default:
+                printf("잘못된 선택입니다. 다시 입력해 주세요.\n");
+                system("clear");
+            break;
+            }
+        sleep(1);
+        }
     
     // 클라이언트 종료 처리
     close(client_socket);
