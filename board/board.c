@@ -6,20 +6,25 @@
 
 // 게시글 작성 함수
 int create_post(const char *user_id, const char *title, const char *content) {
-    FILE *fp = fopen("boards.txt", "a");  // 파일 읽기 모드로 열기
-    if (!fp) {
-        perror("Unable to open file.\n");
-        return -1; 
-    }
+    FILE *fp = fopen("boards.txt", "r");  // 파일 읽기 모드로 열기
+    int post_id = 1;  // 기본 post_id 값을 1로 설정
 
-    int post_id = 1;
-    Post last_post;
-
-    // 마지막 게시글 ID 가져오기
-    while (fscanf(fp, "%d %s %s %d %d \"%[^\"]\" \"%[^\"]\"\n", 
-                  &last_post.post_id, last_post.user_id, last_post.date, 
-                  &last_post.views, &last_post.likes, last_post.title, last_post.content) == 7) {
-        post_id = last_post.post_id + 1; // 마지막 ID의 다음 값
+    if (!fp) {  // 파일이 없는 경우
+        fp = fopen("boards.txt", "w");  // 새 파일 생성
+        if (!fp) {
+            perror("Unable to create file.\n");
+            return -1;
+        }
+        fclose(fp);
+    } else {  // 파일이 있는 경우
+        Post last_post;
+        // 마지막 게시글 ID 가져오기
+        while (fscanf(fp, "%d %s %s %d %d \"%[^\"]\" \"%[^\"]\"\n", 
+                    &last_post.post_id, last_post.user_id, last_post.date, 
+                    &last_post.views, &last_post.likes, last_post.title, last_post.content) == 7) {
+            post_id = last_post.post_id + 1; // 마지막 ID의 다음 값
+        }
+        fclose(fp);
     }
 
     // 새 게시글 작성
@@ -32,6 +37,13 @@ int create_post(const char *user_id, const char *title, const char *content) {
     new_post.likes = 0;
     snprintf(new_post.title, sizeof(new_post.title), "%s", title);
     snprintf(new_post.content, sizeof(new_post.content), "%s", content);
+
+    // 파일 쓰기 모드로 열기
+    fp = fopen("boards.txt", "a");
+    if (!fp) {
+        perror("Unable to open file for writing.\n");
+        return -1;
+    }
 
     // 파일에 새 게시글 추가
     if (fprintf(fp, "%d %s %s %d %d \"%s\" \"%s\"\n", new_post.post_id, new_post.user_id, new_post.date, 
