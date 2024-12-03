@@ -144,6 +144,42 @@ void display_chat_menu() {
     printf("Select an option: ");
 }
 
+// 채팅 로그 모니터링을 위한 구조체 추가
+typedef struct {
+    long last_pos;
+    int room_id;
+    int should_stop;
+} ChatMonitorArgs;
+
+// 채팅 로그 모니터링 함수 수정
+void* monitor_chat_log(void* args) {
+    ChatMonitorArgs* monitor_args = (ChatMonitorArgs*)args;
+    FILE* fp;
+    char buffer[BUFFER_SIZE];
+    char current_room_str[20];
+    snprintf(current_room_str, sizeof(current_room_str), "Room %d", monitor_args->room_id);
+
+    while (!monitor_args->should_stop) {
+        fp = fopen("chatting_log.txt", "r");
+        if (fp != NULL) {
+            fseek(fp, monitor_args->last_pos, SEEK_SET);
+            
+            while (fgets(buffer, sizeof(buffer), fp) != NULL) {
+                if (strstr(buffer, current_room_str) != NULL) {
+                    printf("\n%s\n", buffer);  // 로그만 출력
+                }
+            }
+            
+            monitor_args->last_pos = ftell(fp);
+            fclose(fp);
+        }
+        usleep(100000); // 0.1초 대기
+    }
+    
+    free(monitor_args);
+    return NULL;
+}
+
 int main() {
     int client_socket;
     struct sockaddr_in server_addr;
@@ -479,12 +515,22 @@ int main() {
                     if (strcmp(join_result, "JOIN_CHAT_SUCCESS") == 0) {
                         printf("Successfully joined chat room %d\n", room_id);
                         
+                        // 채팅 로그 모니터링 스레드 시작
+                        pthread_t monitor_thread;
+                        ChatMonitorArgs* monitor_args = malloc(sizeof(ChatMonitorArgs));
+                        monitor_args->last_pos = 0;
+                        monitor_args->room_id = room_id;
+                        monitor_args->should_stop = 0;
+                        
+                        if (pthread_create(&monitor_thread, NULL, monitor_chat_log, monitor_args) != 0) {
+                            perror("Failed to create monitor thread");
+                            free(monitor_args);
+                            continue;
+                        }
+                        
                         // 채팅방 메뉴 루프
-                        FILE *log_file;
-                        char log_buffer[BUFFER_SIZE];
-                        long last_pos = 0;
-
                         while (1) {
+                            usleep(300000);
                             display_chat_menu();
                             int chat_choice;
                             scanf("%d", &chat_choice);
@@ -510,25 +556,17 @@ int main() {
                                         perror("Send failed");
                                     }
                                     printf("Leaving chat room...\n");
-                                    goto exit_chat;  // 채팅방 나가기
+                                    
+                                    // 모니터링 스레드 종료
+                                    monitor_args->should_stop = 1;
+                                    pthread_join(monitor_thread, NULL);
+                                    
+                                    goto exit_chat;
                                 }
                                 default:
                                     printf("Invalid choice. Please try again.\n");
                                     break;
                             }
-
-                            // 채팅 로그 파일 확인
-                            log_file = fopen("chatting_log.txt", "r");
-                            if (log_file != NULL) {
-                                fseek(log_file, last_pos, SEEK_SET);
-                                while (fgets(log_buffer, sizeof(log_buffer), log_file) != NULL) {
-                                    printf("%s", log_buffer);
-                                }
-                                last_pos = ftell(log_file);
-                                fclose(log_file);
-                            }
-
-                            usleep(500000); // 0.5초 대기
                         }
                         exit_chat:  // 채팅방 나가기 레이블
                         continue;
@@ -539,8 +577,6 @@ int main() {
                 usleep(300000);
                 continue;
             }
-
-// ... existing code ...
 
             case 11: { // 채팅 메시지 전송
                 if (!check_login_status(client_socket)) {
