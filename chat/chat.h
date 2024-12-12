@@ -1,11 +1,6 @@
 #ifndef CHAT_H
 #define CHAT_H
 
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-
 #define MAX_USERID 20
 #define MAX_CHAT_USERS 10
 #define MAX_CHAT_ROOMS 5
@@ -15,6 +10,7 @@
 
 extern int next_room_id;
 
+// 채팅방 구조체
 typedef struct {
     int room_id;
     char room_name[MAX_ROOM_NAME];
@@ -23,7 +19,6 @@ typedef struct {
     int user_sockets[MAX_CHAT_USERS];
     int user_count;
     int is_active;
-    int current_room_id;
 } ChatRoom;
 
 void init_chat_rooms();

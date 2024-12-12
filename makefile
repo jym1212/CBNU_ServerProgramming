@@ -22,7 +22,7 @@ CHAT_HDR = $(CHAT_DIR)/chat.h
 SERVER_OUT = server.o
 CLIENT_OUT = client.o
 
-# 기본 목표
+# 기본 설정
 all: $(SERVER_OUT) $(CLIENT_OUT)
 
 # 서버 컴파일
@@ -33,6 +33,6 @@ $(SERVER_OUT): $(SERVER_SRC) $(LOGIN_SRC) $(LOGIN_HDR) $(BOARD_SRC) $(CHAT_SRC) 
 $(CLIENT_OUT): $(CLIENT_SRC)
 	$(CC) $(CFLAGS) -o $@ $(CLIENT_SRC)
 
-# 클린업
+# 클린 업
 clean:
 	rm -f $(SERVER_OUT) $(CLIENT_OUT)

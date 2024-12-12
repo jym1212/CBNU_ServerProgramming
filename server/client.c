@@ -3,16 +3,16 @@
 #include <string.h>
 #include <errno.h>
 #include <unistd.h>
-#include <pthread.h>  // POSIX 스레드 사용
-#include <unistd.h>   // close 함수 사용
-#include <arpa/inet.h> // 소켓 함수 사용
-#include <sys/socket.h> // send, recv 함수 사용
-#include <netinet/in.h> // 소켓 구조체 정의
-#include "../chat/chat.h" // 채팅 관련 함수 사용
+#include <pthread.h> 
+#include <unistd.h>   
+#include <arpa/inet.h> 
+#include <sys/socket.h>
+#include <netinet/in.h> 
+#include "../chat/chat.h" 
 
 #define SERVER_IP "127.0.0.1" // 서버 IP (로컬 테스트용)
-#define PORT 8080            // 서버 포트
-#define BUFFER_SIZE 1024     // 송수신 버퍼 크기
+#define PORT 8080             // 서버 포트
+#define BUFFER_SIZE 1024      // 송수신 버퍼 크기
 
 #define MAX_USERID 20
 #define MAX_PASSWORD 20
@@ -23,9 +23,17 @@
 #define MAX_ROOM_NAME 50
 #define MAX_MESSAGE 100
 
+// 채팅 로그 모니터링을 위한 구조체 
+typedef struct {
+    long last_pos;
+    int room_id;
+    int should_stop;
+} ChatMonitorArgs;
+
+// 채팅방 관리를 위한 전역 변수
 extern ChatRoom chat_rooms[MAX_CHAT_ROOMS];
 
-// 로그인 상태 확인 함수 추가
+// 로그인 상태 확인 함수 
 int check_login_status(int client_socket) {
     char message[BUFFER_SIZE];
     char server_reply[BUFFER_SIZE];
@@ -39,7 +47,7 @@ int check_login_status(int client_socket) {
         return 0;
     }
     
-    // 새로운 타임아웃 설정 (1초)
+    // 새로운 타임아웃 설정
     tv_new.tv_sec = 1;
     tv_new.tv_usec = 0;
     if (setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv_new, sizeof(tv_new)) < 0) {
@@ -47,7 +55,7 @@ int check_login_status(int client_socket) {
         return 0;
     }
 
-    // 메시지 전송
+    // 로그인 상태 확인 메시지 전송
     sprintf(message, "CHECK_LOGIN");
     if (send(client_socket, message, strlen(message), 0) < 0) {
         perror("Send failed");
@@ -55,10 +63,8 @@ int check_login_status(int client_socket) {
         return 0;
     }
 
-    // 서버 응답 대기
-    usleep(50000);  // 50ms 대기
+    usleep(50000); 
 
-    // 서버 응답 수신
     recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
     
     // 이전 타임아웃 설정 복원
@@ -66,6 +72,7 @@ int check_login_status(int client_socket) {
         perror("Failed to restore socket timeout");
     }
 
+    // 서버 응답 확인
     if (recv_size > 0) {
         server_reply[recv_size] = '\0';
         if (strcmp(server_reply, "NOT_LOGGED_IN") == 0) {
@@ -74,12 +81,15 @@ int check_login_status(int client_socket) {
             return 0;
         }
         return 1;
+
     } else if (recv_size == 0) {
         printf("Server disconnected.\n");
         return 0;
+
     } else {
+        // 타임아웃 발생 시 조용히 실패 처리
         if (errno == EWOULDBLOCK || errno == EAGAIN) {
-            return 0;  // 타임아웃 발생 시 조용히 실패 처리
+            return 0; 
         } else {
             perror("Receive failed");
             return 0;
@@ -87,7 +97,7 @@ int check_login_status(int client_socket) {
     }
 }
 
-// receive_messages 함수 수정
+// 서버로부터 메시지 수신하는 함수
 void *receive_messages(void *socket_desc) {
     int client_socket = *(int *)socket_desc;
     char server_reply[BUFFER_SIZE];
@@ -116,42 +126,23 @@ void *receive_messages(void *socket_desc) {
     return NULL;
 }
 
-// 클라이언트 메뉴 표시
-void display_menu() {
-    printf("\n=== Menu ===\n");
-    printf("1. Register\n");
-    printf("2. Login\n");
-    printf("3. Create Posts\n");
-    printf("4. View ALL Posts\n");
-    printf("5. Read Post\n");
-    printf("6. Update Post\n");
-    printf("7. Delete Post\n");
-    printf("8. Create Chatting\n");
-    printf("9. View Chatting List\n");
-    printf("10. Join Chatting\n");
-    printf("11. Send Message\n");
-    printf("12. Leave Chatting\n");
-    printf("13. Delete Chatting\n");
-    printf("0. Exit\n");
-    printf("Select an option: ");
+// 파일 출력 함수
+void print_file(const char *filename) {
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        printf("파일을 열 수 없습니다 : %s\n", filename);
+        return;
+    }
+
+    char ch;
+    while ((ch = fgetc(file)) != EOF) {
+        putchar(ch);
+    }
+
+    fclose(file);
 }
 
-// 채팅방 메뉴 표시 함수 추가
-void display_chat_menu() {
-    printf("\n=== Chat Menu ===\n");
-    printf("1. Send Message\n");
-    printf("2. Exit Chat Room\n");
-    printf("Select an option: ");
-}
-
-// 채팅 로그 모니터링을 위한 구조체 추가
-typedef struct {
-    long last_pos;
-    int room_id;
-    int should_stop;
-} ChatMonitorArgs;
-
-// 채팅 로그 모니터링 함수 수정
+// 채팅 로그 모니터링 함수
 void* monitor_chat_log(void* args) {
     ChatMonitorArgs* monitor_args = (ChatMonitorArgs*)args;
     FILE* fp;
@@ -160,20 +151,20 @@ void* monitor_chat_log(void* args) {
     snprintf(current_room_str, sizeof(current_room_str), "Room %d", monitor_args->room_id);
 
     while (!monitor_args->should_stop) {
-        fp = fopen("chatting_log.txt", "r");
+        fp = fopen("interface/chatting_log.txt", "r");
         if (fp != NULL) {
             fseek(fp, monitor_args->last_pos, SEEK_SET);
             
             while (fgets(buffer, sizeof(buffer), fp) != NULL) {
                 if (strstr(buffer, current_room_str) != NULL) {
-                    printf("\n%s\n", buffer);  // 로그만 출력
+                    printf("\n%s\n", buffer);  
                 }
             }
             
             monitor_args->last_pos = ftell(fp);
             fclose(fp);
         }
-        usleep(100000); // 0.1초 대기
+        usleep(100000); 
     }
     
     free(monitor_args);
@@ -181,11 +172,16 @@ void* monitor_chat_log(void* args) {
 }
 
 int main() {
+    system("clear");
+
     int client_socket;
     struct sockaddr_in server_addr;
     char message[BUFFER_SIZE];
     pthread_t thread_id;
-    int choice;
+
+    int choice1;    //로그인 출력
+    int choice2;    //메인 메뉴 출력 (게시판, 채팅)
+
     static char current_user[MAX_USERID];
 
     // 소켓 생성
@@ -198,8 +194,8 @@ int main() {
 
     // 서버 주소 설정
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP); // 서버 IP 주소
-    server_addr.sin_port = htons(PORT);                 // 서버 포트
+    server_addr.sin_addr.s_addr = inet_addr(SERVER_IP); 
+    server_addr.sin_port = htons(PORT);                 
 
     // 서버에 연결
     if (connect(client_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
@@ -216,501 +212,619 @@ int main() {
 
     usleep(500000);
 
+    system("clear");
+    print_file("interface/intro.txt");
+    sleep(1);
+
     // 클라이언트 메뉴
     while (1) {
-        display_menu();
-        scanf("%d", &choice);
-        getchar(); // 입력 버퍼 클리어
+        print_file("interface/mainlogin.txt");
+        sleep(1);
 
-        switch (choice) {
+        printf("원하는 작업의 번호를 입력해 주세요 (1 또는 2): ");
+        scanf("%d", &choice1);
+        getchar();
+        system("clear");
+        
+        // 로그인 또는 회원가입 메뉴
+        switch (choice1) {
             case 1: { // 회원가입
+                print_file("interface/login/register.txt");
+
                 char user_id[MAX_USERID], password[MAX_PASSWORD];
-                printf("Enter new username: ");
+                printf("이용자 ID : ");
                 scanf("%s", user_id);
-                printf("Enter new password: ");
+                printf("비밀번호 : ");
                 scanf("%s", password);
-                getchar(); // 입력 버퍼 클리어
+                getchar(); 
 
                 // 회원가입 메시지 전송
-                sprintf(message, "REGISTER %s %s", user_id, password);
+                sprintf(message, "REGISTER %s %s", user_id, password); 
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
-                    continue;  // 메뉴로 돌아가기
+                    break;
                 }
+                sleep(1);
+                system("clear");
 
-                // 서버 응답 수신
-                char register_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, register_result, sizeof(register_result) - 1, 0);
-                if (recv_size > 0) {
-                    register_result[recv_size] = '\0';
-                    printf("Server: %s\n", register_result);
-                } else {
-                    printf("Failed to receive server response.\n");
-                }
-                
-                usleep(300000);  // 메시지를 읽을 시간 제공
-                continue;  // 메뉴로 돌아가기
+                print_file("interface/login/register_success.txt");
+                sleep(1);
+                system("clear");
+
+                continue;
+
             }
 
             case 2: { // 로그인
+                system("clear");
+                print_file("interface/login/login.txt");
+
                 char user_id[MAX_USERID], password[MAX_PASSWORD];
-                
-                printf("Enter username: ");
+                printf("이용자 ID : ");
                 scanf("%s", user_id);
-                printf("Enter password: ");
+                printf("비밀번호 : ");
                 scanf("%s", password);
-                getchar(); // 입력 버퍼 클리어
+                getchar();
 
                 // 로그인 메시지 전송
                 sprintf(message, "LOGIN %s %s", user_id, password);
                 if (send(client_socket, message, strlen(message), 0) < 0) {
                     perror("Send failed");
-                    continue;
-                }
-
-                // 서버 응답 수신
-                char login_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, login_result, sizeof(login_result) - 1, 0);
-                if (recv_size > 0) {
-                    login_result[recv_size] = '\0';
-                    printf("Server: %s\n", login_result);
-                    
-                    if (strcmp(login_result, "LOGIN_SUCCESS") == 0) {
-                        strncpy(current_user, user_id, MAX_USERID - 1);
-                        current_user[MAX_USERID - 1] = '\0';
-                    }
-                } else {
-                    printf("Failed to receive server response.\n");
-                }
-                usleep(300000);
-                continue;  // 메뉴로 돌아가기
-            }
-
-
-            case 3: { // 게시글 생성
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                char title[MAX_TITLE], content[MAX_CONTENT];
-                printf("Enter title: ");
-                fgets(title, sizeof(title), stdin);
-                title[strcspn(title, "\n")] = '\0';
-
-                printf("Enter content: ");
-                fgets(content, sizeof(content), stdin);
-                content[strcspn(content, "\n")] = '\0';
-
-                sprintf(message, "CREATE_POST \"%s\" \"%s\"", title, content);
-                if(send(client_socket, message, strlen(message), 0) < 0){   
-                    perror("Send failed");
                     break;
                 }
-
-                // 게시글 작성 결과 수신을 위한 지역 변수 사용
-                char create_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, create_result, sizeof(create_result) - 1, 0);
-                if (recv_size > 0) {
-                    create_result[recv_size] = '\0';
-                    printf("%s\n", create_result);
-                } else {
-                    printf("Failed to receive server response.\n");
-                }
-                usleep(300000);
-                continue;;
-            }
-
-            case 4: { // 게시글 목록 조회
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                sprintf(message, "LIST_POSTS");
-                if(send(client_socket, message, strlen(message), 0) < 0){
-                    perror("Send failed");
-                    continue;  // 메뉴로 돌아가기
-                }
-
-                char post_list[BUFFER_SIZE * 4];
-                ssize_t recv_size = recv(client_socket, post_list, sizeof(post_list) - 1, 0);
-                if (recv_size > 0) {
-                    post_list[recv_size] = '\0';
-                    printf("\n=== List of Posts ===\n%s", post_list);
-                } else {
-                    printf("Failed to receive posts from server.\n");
-                }
-                usleep(300000);  // 메시지를 읽을 시간 제공
-                continue;  // 메뉴로 돌아가기 
-            }
-
-            case 5: { // 게시글 조회
-                // 로그인 상태 확인 요청
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                // 로그인 상태가 확인되면 게시글 조회 진행
-                int post_id;    
-                printf("Enter Post ID to view: ");
-                scanf("%d", &post_id);
-                getchar(); // 입력 버퍼 정리
-
-                sprintf(message, "READ_POST %d", post_id);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                }
-
-                char post_details[BUFFER_SIZE * 4];  // 더 큰 버퍼 사용
-                ssize_t recv_size = recv(client_socket, post_details, sizeof(post_details) - 1, 0);
-                if (recv_size > 0) {
-                    post_details[recv_size] = '\0';
-                    printf("\n=== Post Details ===\n%s", post_details);
-                } else {
-                    printf("Failed to receive post details.\n");
-                }
-                usleep(300000);
-                continue;;
-            }
-
-            case 6: { // 게시글 수정
-                // 로그인 상태 확인 요청
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }   
-
-                // 로그인 상태가 확인되면 게시글 수정 진행
-                int post_id;
-                char title[MAX_TITLE], content[MAX_CONTENT];
-
-                printf("Enter Post ID to update: ");
-                scanf("%d", &post_id);
-                getchar(); // 버퍼 비우기
-
-                printf("Enter new title: ");
-                fgets(title, sizeof(title), stdin);
-                title[strcspn(title, "\n")] = '\0';
-                
-                printf("Enter new content: ");
-                fgets(content, sizeof(content), stdin);
-                content[strcspn(content, "\n")] = '\0';
-                
-                sprintf(message, "UPDATE_POST %d \"%s\" \"%s\"", post_id, title, content);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                }
-
-                char update_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, update_result, sizeof(update_result) - 1, 0);
-                if (recv_size > 0) {
-                    update_result[recv_size] = '\0';
-                    printf("%s\n", update_result);
-                }
-                usleep(300000);
-                continue;;
-            }
-
-            case 7: { // 게시글 삭제
-                // 로그인 상태 확인 요청
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                // 로그인 상태가 확인되면 게시글 삭제 진행
-                int post_id;
-                printf("Enter Post ID to delete: ");
-                scanf("%d", &post_id);
-                getchar(); // 입력 버퍼 정리
-
-                sprintf(message, "DELETE_POST %d", post_id);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                }
-
-                char delete_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, delete_result, sizeof(delete_result) - 1, 0);
-                if (recv_size > 0) {
-                    delete_result[recv_size] = '\0';
-                    printf("%s\n", delete_result);
-                }
-                usleep(300000);
-                continue;;
-            }
-
-            case 8: { // 채팅방 생성
-                // 로그인 상태 확인 요청
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                // 로그인 상태가 확인되면 채팅방 생성 진행
-                char room_name[MAX_ROOM_NAME];
-                printf("Enter chat room name: ");
-                fgets(room_name, sizeof(room_name), stdin);
-                room_name[strcspn(room_name, "\n")] = '\0';
-
-                sprintf(message, "CREATE_CHAT %s", room_name);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                }
-
-                char server_reply[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
-                if (recv_size > 0) {
-                    server_reply[recv_size] = '\0';
-                    printf("%s\n", server_reply);
-                    usleep(300000);
-                }
-                continue;;
-            }
-
-            case 9: { // 채팅방 목록 조회
-                // 로그인 상태 확인 요청
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                // 로그인 상태가 확인되면 채팅방 목록 조회 진행
-                sprintf(message, "VIEW_CHAT_LIST");
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                }
-
-                char chat_list[BUFFER_SIZE * 4];
-                ssize_t recv_size = recv(client_socket, chat_list, sizeof(chat_list) - 1, 0);
-                if (recv_size > 0) {
-                    chat_list[recv_size] = '\0';
-                    printf("%s", chat_list);
-                    usleep(300000);
-                }
-                continue;;
-            }
-
-            // ... existing code ...
-
-            case 10: { // 채팅방 참여
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                int room_id;
-                printf("Enter chat room ID to join: ");
-                scanf("%d", &room_id);
-                getchar(); // 입력 버퍼 클리어
-
-                sprintf(message, "JOIN_CHAT %d", room_id);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    continue;
-                }
-
-                char join_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, join_result, sizeof(join_result) - 1, 0);
-                if (recv_size > 0) {
-                    join_result[recv_size] = '\0';
-                    if (strcmp(join_result, "JOIN_CHAT_SUCCESS") == 0) {
-                        printf("Successfully joined chat room %d\n", room_id);
-                        
-                        // 채팅 로그 모니터링 스레드 시작
-                        pthread_t monitor_thread;
-                        ChatMonitorArgs* monitor_args = malloc(sizeof(ChatMonitorArgs));
-                        monitor_args->last_pos = 0;
-                        monitor_args->room_id = room_id;
-                        monitor_args->should_stop = 0;
-                        
-                        if (pthread_create(&monitor_thread, NULL, monitor_chat_log, monitor_args) != 0) {
-                            perror("Failed to create monitor thread");
-                            free(monitor_args);
-                            continue;
-                        }
-                        
-                        // 채팅방 메뉴 루프
-                        while (1) {
-                            usleep(300000);
-                            display_chat_menu();
-                            int chat_choice;
-                            scanf("%d", &chat_choice);
-                            getchar(); // 입력 버퍼 클리어
-
-                            switch (chat_choice) {
-                                case 1: { // 메시지 전송
-                                    printf("Enter message: ");
-                                    char chat_message[MAX_MESSAGE];
-                                    fgets(chat_message, sizeof(chat_message), stdin);
-                                    chat_message[strcspn(chat_message, "\n")] = '\0';
-
-                                    snprintf(message, sizeof(message), "SEND_MESSAGE %d %s %s", 
-                                            room_id, current_user, chat_message);
-                                    if (send(client_socket, message, strlen(message), 0) < 0) {
-                                        perror("Send failed");
-                                    }
-                                    break;
-                                }
-                                case 2: { // 채팅방 나가기
-                                    sprintf(message, "LEAVE_CHAT %d", room_id);
-                                    if (send(client_socket, message, strlen(message), 0) < 0) {
-                                        perror("Send failed");
-                                    }
-                                    printf("Leaving chat room...\n");
-                                    
-                                    // 모니터링 스레드 종료
-                                    monitor_args->should_stop = 1;
-                                    pthread_join(monitor_thread, NULL);
-                                    
-                                    goto exit_chat;
-                                }
-                                default:
-                                    printf("Invalid choice. Please try again.\n");
-                                    break;
-                            }
-                        }
-                        exit_chat:  // 채팅방 나가기 레이블
-                        continue;
-                    } else {
-                        printf("Failed to join chat room: %s\n", join_result);
-                    }
-                }
-                usleep(300000);
-                continue;
-            }
-
-            case 11: { // 채팅 메시지 전송
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                static char current_user[MAX_USERID];  // 현재 로그인한 사용자 ID
-                int room_id;
-                char chat_message[MAX_MESSAGE];
-                
-                printf("Enter chat room ID: ");
-                scanf("%d", &room_id);
-                getchar(); // 버퍼 클리어
-
-                printf("Enter message: ");
-                fgets(chat_message, sizeof(chat_message), stdin);
-                chat_message[strcspn(chat_message, "\n")] = '\0';
-
-                // current_user가 비어있는지 확인
-                if (current_user[0] == '\0') {
-                    printf("Error: User ID not found. Please login again.\n");
-                    usleep(300000);
-                    continue;
-                }
-
-                // 메시지 형식: "SEND_MESSAGE room_id user_id message"
-                sprintf(message, "SEND_MESSAGE %d %s %s", room_id, current_user, chat_message);
-                
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    continue;
-                }
-
-                usleep(300000);
-                continue;
-            }
-
-            case 12: { // 채팅방 퇴장
-                // 로그인 상태 확인 요청    
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                // 로그인 상태가 확인되면 채팅방 퇴장 진행
-                int room_id;
-                printf("Enter chat room ID to leave: ");
-                scanf("%d", &room_id);
-                getchar(); // 입력 버퍼 클리어
-
-                sprintf(message, "LEAVE_CHAT %d", room_id);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    break;
-                }
-
-                char server_reply[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
-                if (recv_size > 0) {
-                    server_reply[recv_size] = '\0';
-                    if (strcmp(server_reply, "LEAVE_CHAT_SUCCESS") == 0) {
-                        printf("Successfully left chat room %d\n", room_id);
-                    } else {
-                        printf("Failed to leave chat room: %s\n", server_reply);
-                    }
-                    usleep(300000);
-                }
-                continue;
-            }
-
-            case 13: { // 채팅방 삭제
-                if (!check_login_status(client_socket)) {
-                    continue;
-                }
-
-                int room_id;
-                printf("Enter chat room ID to delete: ");
-                scanf("%d", &room_id);
-                getchar(); // 입력 버퍼 클리어
-
-                sprintf(message, "DELETE_CHAT %d", room_id);
-                if (send(client_socket, message, strlen(message), 0) < 0) {
-                    perror("Send failed");
-                    continue;
-                }
-
-                char delete_result[BUFFER_SIZE];
-                ssize_t recv_size = recv(client_socket, delete_result, sizeof(delete_result) - 1, 0);
-                if (recv_size > 0) {
-                    delete_result[recv_size] = '\0';
-                    if (strcmp(delete_result, "DELETE_CHAT_SUCCESS") == 0) {
-                        printf("채팅방이 성공적으로 삭제되었습니다.\n");
-                    } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_NOT_CREATOR") == 0) {
-                        printf("채팅방 생성자만 삭제할 수 있습니다.\n");
-                    } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_NOT_EXIST") == 0) {
-                        printf("존재하지 않는 채팅방입니다.\n");
-                    } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_INVALID_ID") == 0) {
-                        printf("잘못된 채팅방 ID입니다.\n");
-                    } else {
-                        printf("채팅방 삭제에 실패했습니다.\n");
-                    }
-                }
-                usleep(300000);
-                continue;
-            }
-
-            case 0: { // 종료
-                printf("Exiting client...\n");
-                
-                // chatting.txt 파일 비우기
-                FILE *fp1 = fopen("chatting.txt", "w");
-                if (fp1 != NULL) {
-                    fclose(fp1);
-                } else {
-                    perror("Failed to clear chatting.txt");
-                }
-
-                FILE *fp2 = fopen("chatting_log.txt", "w");
-                if (fp2 != NULL) {
-                    fclose(fp2);
-                } else {
-                    perror("Failed to clear chatting.txt");
-                }
-                
-                close(client_socket);
-                return 0;
-            }
-
-            default:
-                printf("Invalid choice. Please try again.\n");
-                usleep(300000);
                 break;
+            }
+            default: { // 잘못된 선택 처리
+
+                printf("잘못된 선택입니다. 다시 입력해 주세요.\n");
+                break;
+            }
         }
+        sleep(1);
+
+        // 로그인 후 메뉴 출력
+        system("clear");
+        break;
     }
 
+    // 로그인 성공 
+    print_file("interface/login/login_success.txt");
+    sleep(1);
+    system("clear");
+
+    // 메인 메뉴
+    while (1) {
+
+        system("clear");
+        print_file("interface/main2.txt");
+        sleep(1);
+
+        printf(" 원하는 작업의 번호를 입력해 주세요 : ");
+        scanf("%d", &choice2);
+        getchar();
+        system("clear");
+
+            switch (choice2) {
+                case 11: { // 게시글 목록 조회
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/board/board_all.txt");
+
+                    // 게시글 목록 메세지 전송
+                    sprintf(message, "LIST_POSTS");
+                    if(send(client_socket, message, strlen(message), 0) < 0){
+                        perror("Send failed");
+                        continue; 
+                    }
+
+                    // 게시글 목록 수신
+                    char post_list[BUFFER_SIZE * 4];
+                    ssize_t recv_size = recv(client_socket, post_list, sizeof(post_list) - 1, 0);
+                    if (recv_size > 0) {
+                        post_list[recv_size] = '\0';
+                        printf("\n%s\n", post_list);
+                    } else {
+                        printf("Failed to receive posts from server.\n");
+                    }
+                    usleep(300000); 
+
+                    printf("\n\n메뉴로 돌아가려면 0을 입력하세요: ");
+                    int back_choice;
+                    scanf("%d", &back_choice);
+                    if (back_choice == 0) {
+                        continue; 
+                    }
+
+                    system("clear");
+                    break;
+                }
+
+
+                case 12: { // 게시글 검색
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/board/board_read.txt");
+
+                    int post_id;    
+                    printf("조회하고 싶은 게시글 ID를 입력하세요: ");
+                    scanf("%d", &post_id);
+                    getchar(); 
+
+                    // 게시글 조회 메시지 전송
+                    sprintf(message, "READ_POST %d", post_id);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        break;
+                    }
+
+                    system("clear");
+
+                    // 게시글 조회 결과 수신
+                    char post_details[BUFFER_SIZE * 4]; 
+                    ssize_t recv_size = recv(client_socket, post_details, sizeof(post_details) - 1, 0);
+                    if (recv_size > 0) {
+                        print_file("interface/board/board_result.txt");
+                        post_details[recv_size] = '\0';
+                        printf("\n\n%s", post_details);
+                    } else {
+                        printf("Failed to receive post details.\n");
+                    }
+                    usleep(300000);
+
+                    printf("\n\n메뉴로 돌아가려면 0을 입력하세요 : ");
+                    int back_choice;
+                    scanf("%d", &back_choice);
+                    if (back_choice == 0) {
+                        continue; 
+                    }
+
+                    system("clear");
+
+                    break;
+                }
+
+                case 13: { // 게시글 생성
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/board/board_create.txt");
+
+                    char title[MAX_TITLE], content[MAX_CONTENT];
+                    printf(" 제목: ");
+                    fgets(title, sizeof(title), stdin);
+                    title[strcspn(title, "\n")] = '\0';
+
+                    printf(" 내용: ");
+                    fgets(content, sizeof(content), stdin);
+                    content[strcspn(content, "\n")] = '\0';
+
+                    // 게시글 생성 메시지 전송
+                    sprintf(message, "CREATE_POST \"%s\" \"%s\"", title, content);
+                    if(send(client_socket, message, strlen(message), 0) < 0){   
+                        perror("Send failed");
+                        break;
+                    }
+
+                    // 게시글 생성 결과 수신
+                    char create_result[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, create_result, sizeof(create_result) - 1, 0);
+                    if (recv_size > 0) {
+                        create_result[recv_size] = '\0';
+                        printf("%s\n", create_result);
+                    } else {
+                        printf("Failed to receive server response.\n");
+                    }
+
+                    usleep(300000);
+                    system("clear");
+                    break;
+                }
+
+                case 14: { // 게시글 수정
+                    // 로그인 상태 확인 
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }   
+
+                    print_file("interface/board/board_update.txt");
+
+                    int post_id;
+                    char title[MAX_TITLE], content[MAX_CONTENT];
+
+                    printf(" 수정하고 싶은 게시글 ID를 입력하세요: ");
+                    scanf("%d", &post_id);
+                    getchar(); 
+                    
+                    printf(" 수정 제목: ");
+                    fgets(title, sizeof(title), stdin);
+                    title[strcspn(title, "\n")] = '\0';
+                    
+                    printf(" 수정 내용: ");
+                    fgets(content, sizeof(content), stdin);
+                    content[strcspn(content, "\n")] = '\0';
+                    
+                    // 게시글 수정 메시지 전송
+                    sprintf(message, "UPDATE_POST %d \"%s\" \"%s\"", post_id, title, content);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        break;
+                    }
+
+                    // 게시글 수정 결과 수신
+                    char update_result[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, update_result, sizeof(update_result) - 1, 0);
+                    if (recv_size > 0) {
+                        update_result[recv_size] = '\0';
+                        printf("%s\n", update_result);
+                    }
+
+                    usleep(300000);
+                    system("clear");
+                    break;
+                }
+
+                case 15: { // 게시글 삭제
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/board/board_delete.txt");
+
+                    int post_id;
+                    printf(" 삭제하고 싶은 게시글 ID를 입력하세요 : ");
+                    scanf("%d", &post_id);
+                    getchar();
+
+                    // 게시글 삭제 메시지 전송
+                    sprintf(message, "DELETE_POST %d", post_id);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        break;
+                    }
+
+                    // 게시글 삭제 결과 수신
+                    char delete_result[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, delete_result, sizeof(delete_result) - 1, 0);
+                    if (recv_size > 0) {
+                        delete_result[recv_size] = '\0';
+                        printf("%s\n", delete_result);
+                    }
+
+                    usleep(300000);
+                    system("clear");
+                    break;
+                }
+
+                case 22: { // 채팅방 생성
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/chat/chat_create.txt");
+
+                    char room_name[MAX_ROOM_NAME];
+                    printf("채팅방 이름을 입력하세요: ");
+                    fgets(room_name, sizeof(room_name), stdin);
+                    room_name[strcspn(room_name, "\n")] = '\0';
+
+                    // 채팅방 생성 메시지 전송
+                    sprintf(message, "CREATE_CHAT %s", room_name);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        break;
+                    }
+
+                    // 채팅방 생성 결과 수신
+                    char server_reply[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                    if (recv_size > 0) {
+                        server_reply[recv_size] = '\0';
+                        printf("%s\n", server_reply);
+                        usleep(300000);
+                    }
+                    continue;
+                }
+
+                case 21: { // 채팅방 목록 조회
+                    // 로그인 상태 확인 
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/chat/chat_all.txt");
+
+                    // 채팅방 목록 조회 메시지 전송
+                    sprintf(message, "VIEW_CHAT_LIST");
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        break;
+                    }
+
+                    // 채팅방 목록 수신
+                    char chat_list[BUFFER_SIZE * 4];
+                    ssize_t recv_size = recv(client_socket, chat_list, sizeof(chat_list) - 1, 0);
+                    if (recv_size > 0) {
+                        chat_list[recv_size] = '\0';
+                        printf("%s", chat_list);
+                        usleep(300000);
+                    }
+
+                    printf("\n\n메뉴로 돌아가려면 0을 입력하세요: ");
+                    int back_choice;
+                    scanf("%d", &back_choice);
+                    if (back_choice == 0) {
+                        continue; 
+                    }
+
+                    system("clear");
+                    continue;;
+                }
+
+                case 23: { // 채팅방 참여
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/chat/chat_start.txt");
+
+                    int room_id;
+                    printf("참여할 채팅방 ID를 입력하세요: ");
+                    scanf("%d", &room_id);
+                    getchar(); 
+
+                    // 채팅방 참여 메시지 전송
+                    sprintf(message, "JOIN_CHAT %d", room_id);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        continue;
+                    }
+
+                    // 채팅방 참여 결과 수신
+                    char join_result[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, join_result, sizeof(join_result) - 1, 0);
+                    if (recv_size > 0) {
+                        join_result[recv_size] = '\0';
+
+                        // 채팅방 참여 성공 시, 채팅방 메뉴로 이동
+                        if (strcmp(join_result, "JOIN_CHAT_SUCCESS") == 0) {
+                            printf("채팅방에 성공적으로 들어왔습니다. %d\n", room_id);
+                            
+                            // 채팅 로그 모니터링 스레드
+                            pthread_t monitor_thread;
+                            ChatMonitorArgs* monitor_args = malloc(sizeof(ChatMonitorArgs));
+                            monitor_args->last_pos = 0;
+                            monitor_args->room_id = room_id;
+                            monitor_args->should_stop = 0;
+
+                            // 모니터링 스레드 생성
+                            if (pthread_create(&monitor_thread, NULL, monitor_chat_log, monitor_args) != 0) {
+                                perror("Failed to create monitor thread");
+                                free(monitor_args);
+                                continue;
+                            }
+
+                            // 채팅방 메뉴 
+                            while (1) {
+                                usleep(300000);
+                                print_file("interface/chat/chat_menu.txt");
+
+                                int chat_choice;
+                                printf("원하는 작업의 번호를 입력해 주세요 (1 또는 2): ");
+                                scanf("%d", &chat_choice);
+                                getchar();
+
+                                switch (chat_choice) {
+                                    case 1: { // 메시지 전송
+                                        system("clear");
+                                        printf("\n\n보낼 메시지:");
+                                        char chat_message[MAX_MESSAGE];
+                                        fgets(chat_message, sizeof(chat_message), stdin);
+                                        chat_message[strcspn(chat_message, "\n")] = '\0';
+
+                                        // 채팅방 메시지 전송
+                                        snprintf(message, sizeof(message), "SEND_MESSAGE %d %s %s", 
+                                                room_id, current_user, chat_message);
+                                        if (send(client_socket, message, strlen(message), 0) < 0) {
+                                            perror("Send failed");
+                                        }
+                                        break;
+                                    }
+                                    case 2: { // 채팅방 퇴장
+                                        // 채팅방 퇴장 메시지 전송
+                                        sprintf(message, "LEAVE_CHAT %d", room_id);
+                                        if (send(client_socket, message, strlen(message), 0) < 0) {
+                                            perror("Send failed");
+                                        }
+                                        printf("채팅방을 나갑니다 ...\n");
+                                        
+                                        // 모니터링 스레드 종료
+                                        monitor_args->should_stop = 1;
+                                        pthread_join(monitor_thread, NULL);
+                                        
+                                        // 채팅방 퇴장 
+                                        goto exit_chat;
+                                    }
+                                    default: {
+                                        printf("잘못된 접근입니다. 다시 입력 입력해주세요.\n");
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // 채팅방 퇴장 
+                            exit_chat:  
+                            continue;
+
+                        } else {
+                            printf("채팅방 참여에 실패했습니다. %s\n", join_result);
+                        }
+                    }
+                    usleep(300000);
+                    continue;
+                }
+
+                case 24: { // 채팅 메시지 전송
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    static char current_user[MAX_USERID];  // 현재 로그인한 사용자 ID
+                    int room_id;
+                    char chat_message[MAX_MESSAGE];
+                    
+                    printf("채팅방 ID를 입력하세요: ");
+                    scanf("%d", &room_id);
+                    getchar(); 
+
+                    printf("메시지를 입력하세요: ");
+                    fgets(chat_message, sizeof(chat_message), stdin);
+                    chat_message[strcspn(chat_message, "\n")] = '\0';
+
+                    // current_user가 비어있는지 확인
+                    if (current_user[0] == '\0') {
+                        printf("Error: User ID not found. Please login again.\n");
+                        usleep(300000);
+                        continue;
+                    }
+
+                    // 채팅방 메시지 전송
+                    sprintf(message, "SEND_MESSAGE %d %s %s", room_id, current_user, chat_message);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        continue;
+                    }
+
+                    usleep(300000);
+                    continue;
+                }
+
+                case 25: { // 채팅방 퇴장
+                    // 로그인 상태 확인     
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    print_file("interface/chat/chat_end.txt");
+
+                    int room_id;
+                    printf("채팅방 ID를 입력하세요: ");
+                    scanf("%d", &room_id);
+                    getchar(); 
+
+                    // 채팅방 퇴장 메시지 전송
+                    sprintf(message, "LEAVE_CHAT %d", room_id);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        break;
+                    }
+
+                    // 채팅방 퇴장 결과 수신
+                    char server_reply[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, server_reply, sizeof(server_reply) - 1, 0);
+                    if (recv_size > 0) {
+                        server_reply[recv_size] = '\0';
+                        if (strcmp(server_reply, "LEAVE_CHAT_SUCCESS") == 0) {
+                            printf("채팅방을 성공적로 마무리했습니다.%d\n", room_id);
+                        } else {
+                            printf("Failed to leave chat room: %s\n", server_reply);
+                        }
+                        usleep(300000);
+                    }
+                    continue;
+                }
+
+                case 26: { // 채팅방 삭제
+                    // 로그인 상태 확인
+                    if (!check_login_status(client_socket)) {
+                        continue;
+                    }
+
+                    int room_id;
+                    printf("삭제하기 위한 채팅방의 번호를 입력하세요: ");
+                    scanf("%d", &room_id);
+                    getchar(); 
+
+                    print_file("interface/chat/chat_delete.txt");
+
+                    // 채팅방 삭제 메시지 전송
+                    sprintf(message, "DELETE_CHAT %d", room_id);
+                    if (send(client_socket, message, strlen(message), 0) < 0) {
+                        perror("Send failed");
+                        continue;
+                    }
+
+                    // 채팅방 삭제 결과 수신
+                    char delete_result[BUFFER_SIZE];
+                    ssize_t recv_size = recv(client_socket, delete_result, sizeof(delete_result) - 1, 0);
+                    if (recv_size > 0) {
+                        delete_result[recv_size] = '\0';
+                        if (strcmp(delete_result, "DELETE_CHAT_SUCCESS") == 0) {
+                            printf("채팅방이 성공적으로 삭제되었습니다.\n");
+                        } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_NOT_CREATOR") == 0) {
+                            printf("채팅방 생성자만 삭제할 수 있습니다.\n");
+                        } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_NOT_EXIST") == 0) {
+                            printf("존재하지 않는 채팅방입니다.\n");
+                        } else if (strcmp(delete_result, "DELETE_CHAT_FAIL_INVALID_ID") == 0) {
+                            printf("잘못된 채팅방 ID입니다.\n");
+                        } else {
+                            printf("채팅방 삭제에 실패했습니다.\n");
+                        }
+                    }
+                    usleep(300000);
+                    printf("\n\n메뉴로 돌아가려면 0을 입력하세요: ");
+
+                    int back_choice;
+                    scanf("%d", &back_choice);
+                    if (back_choice == 0) {
+                        continue;  
+                    }
+
+                    continue;
+                }
+
+                case 0: { // 종료
+                    printf("Exiting client...\n");
+                    
+                    // chatting.txt 파일 비우기
+                    FILE *fp1 = fopen("interface/chatting.txt", "w");
+                    if (fp1 != NULL) {
+                        fclose(fp1);
+                    } else {
+                        perror("Failed to clear chatting.txt");
+                    }
+
+                    FILE *fp2 = fopen("interface/chatting_log.txt", "w");
+                    if (fp2 != NULL) {
+                        fclose(fp2);
+                    } else {
+                        perror("Failed to clear chatting.txt");
+                    }
+                    
+                    // 클라이언트 종료 처리
+                    close(client_socket);
+                    return 0;
+                }
+                default:
+                    printf("잘못된 선택입니다. 다시 입력해 주세요.\n");
+                    system("clear");
+                    break;
+                }
+
+            sleep(1);
+        }
+    
     // 클라이언트 종료 처리
     close(client_socket);
     return 0;

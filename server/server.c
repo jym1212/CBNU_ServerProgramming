@@ -1,14 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h> // POSIX 스레드 
-#include <unistd.h>  // close 함수 
-#include <arpa/inet.h> // 소켓 관련 함수 
-#include <time.h>  // 타임스탬프 기능을 위한 헤더
+#include <pthread.h> 
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <time.h>  
 
-#include "../login/login.h" // 로그인 및 회원가입 
-#include "../board/board.h" // 게시판 
-#include "../chat/chat.h" // 채팅 
+#include "../login/login.h" // 로그인 및 회원가입 헤더
+#include "../board/board.h" // 게시판 헤더
+#include "../chat/chat.h"   // 채팅 헤더더
 
 #define PORT 8080
 #define BUFFER_SIZE 1024
@@ -17,6 +17,7 @@
 // 채팅방 관리를 위한 전역 변수
 extern ChatRoom chat_rooms[MAX_CHAT_ROOMS];
 
+// 클라이언트 상태 구조체
 typedef struct {
     int socket;
     char user_id[MAX_USERID];
@@ -28,7 +29,7 @@ typedef struct {
 ClientState clients[MAX_CLIENTS];
 int client_count = 0;
 
-// 뮤텍스 객체 (클라이언트 리스트 보호용)
+// 뮤텍스 객체 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // 클라이언트 상태 초기화 함수
@@ -37,7 +38,7 @@ void initialize_client_state(int socket) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (clients[i].socket == 0) {
             clients[i].socket = socket;
-            clients[i].is_logged_in = 0; // 로그인 상태 초기화
+            clients[i].is_logged_in = 0; 
             memset(clients[i].user_id, 0, sizeof(clients[i].user_id));
             break;
         }
@@ -45,7 +46,7 @@ void initialize_client_state(int socket) {
     pthread_mutex_unlock(&mutex);
 }
 
-// 클라이언트 상태 제거
+// 클라이언트 상태 제거 함수
 void remove_client_state(int socket) {
     pthread_mutex_lock(&mutex);
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -71,7 +72,7 @@ void *handle_client(void *socket_desc) {
         buffer[recv_size] = '\0';
         printf("Client %d: %s\n", client_socket, buffer);
 
-        // 로그인 상태 확인 처리
+        // case 0: 로그인 상태 확인 처리
         if (strncmp(buffer, "CHECK_LOGIN", 11) == 0) {
             int is_logged_in = 0;
             
@@ -92,10 +93,10 @@ void *handle_client(void *socket_desc) {
             continue;
         }
         
-        // 회원가입 처리
+        // case 1: 회원가입 처리
         if (strncmp(buffer, "REGISTER", 8) == 0) {
             char user_id[MAX_USERID], password[MAX_PASSWORD];
-            sscanf(buffer + 9, "%s %s", user_id, password); // username과 password 파싱
+            sscanf(buffer + 9, "%s %s", user_id, password); 
 
             int result = register_user(user_id, password);
             if (result == 1) {
@@ -108,10 +109,10 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 로그인 처리
+        // case 2: 로그인 처리
         if (strncmp(buffer, "LOGIN", 5) == 0) {
             char user_id[MAX_USERID], password[MAX_PASSWORD];
-            sscanf(buffer + 6, "%s %s", user_id, password); // username과 password 파싱    
+            sscanf(buffer + 6, "%s %s", user_id, password);
 
             if (login_user(user_id, password) == 1) {
                 pthread_mutex_lock(&mutex);
@@ -130,11 +131,12 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 게시글 작성 처리
+        // case 3: 게시글 작성 처리
         if (strncmp(buffer, "CREATE_POST", 11) == 0) {
             char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
 
+            // 로그인 상태 확인
             pthread_mutex_lock(&mutex);
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].socket == client_socket) {
@@ -151,8 +153,8 @@ void *handle_client(void *socket_desc) {
             }
 
             
+            // 큰 따옴표를 기준으로 제목과 내용 저장
             char title[MAX_TITLE], content[MAX_CONTENT];
-            // 큰따옴표 기준으로 데이터 파싱
             sscanf(buffer + 12, "\"%[^\"]\" \"%[^\"]\"", title, content);
             printf("Parsed title: %s\n", title);
             printf("Parsed content: %s\n", content);
@@ -165,10 +167,11 @@ void *handle_client(void *socket_desc) {
             continue;
         }   
 
-        // 게시글 목록 조회 처리
+        // case 4: 게시글 목록 조회 처리
         if (strncmp(buffer, "LIST_POSTS", 11) == 0) {
             int is_logged_in = 0;
     
+            // 로그인 상태 확인
             pthread_mutex_lock(&mutex);
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].socket == client_socket) {
@@ -193,11 +196,12 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 단일 게시글 조회 처리
+        // case 5: 단일 게시글 조회 처리
         if (strncmp(buffer, "READ_POST", 9) == 0) {
             int post_id;
             int is_logged_in = 0;
 
+            // 로그인 상태 확인
             pthread_mutex_lock(&mutex);
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].socket == client_socket) {
@@ -212,17 +216,15 @@ void *handle_client(void *socket_desc) {
                 continue;
             }
 
-            sscanf(buffer + 10, "%d", &post_id); // post_id 파싱
-            printf("Requested Post ID: %d\n", post_id); // 디버깅 로그
+            sscanf(buffer + 10, "%d", &post_id);
+            printf("Requested Post ID: %d\n", post_id); 
 
             Post post;
-
             if (read_post(post_id, &post) == 1) {
-                // 게시글 데이터를 문자열로 변환하여 클라이언트에 전송
                 char response[BUFFER_SIZE];
                 snprintf(response, sizeof(response), 
-                         "ID: %d | User: %s | Date: %s | Views: %d | Likes: %d\nTitle: %s\nContent: %s\n", 
-                         post.post_id, post.user_id, post.date, post.views, post.likes, post.title, post.content);
+                         "ID: %d | User: %s | Date: %s | Views: %d\nTitle: %s\nContent: %s\n", 
+                         post.post_id, post.user_id, post.date, post.views, post.title, post.content);
                 send(client_socket, response, strlen(response), 0);
             } else {
                 send(client_socket, "Post not found.\n", strlen("Post not found.\n"), 0);
@@ -230,7 +232,7 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 게시글 수정 처리
+        // case 6: 게시글 수정 처리
         if (strncmp(buffer, "UPDATE_POST", 11) == 0) {
             int post_id;
             char title[MAX_TITLE], content[MAX_CONTENT];
@@ -252,7 +254,6 @@ void *handle_client(void *socket_desc) {
                 send(client_socket, "NOT_LOGGED_IN", strlen("NOT_LOGGED_IN"), 0);
                 continue;
             }
-            // 입력 파싱
             sscanf(buffer + 12, "%d \"%[^\"]\" \"%[^\"]\"", 
                    &post_id, title, content);
     
@@ -271,7 +272,6 @@ void *handle_client(void *socket_desc) {
                 continue;
             }
     
-            // 게시글 수정
             if (update_post(post_id, title, content) == 1) {
                 send(client_socket, "UPDATE_SUCCESS", strlen("UPDATE_SUCCESS"), 0);
             } else {
@@ -280,7 +280,7 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 게시글 삭제 처리
+        // case 7: 게시글 삭제 처리
         if (strncmp(buffer, "DELETE_POST", 11) == 0) {
             int post_id;
             char user_id[MAX_USERID] = {0};
@@ -319,7 +319,6 @@ void *handle_client(void *socket_desc) {
                 continue;
             }
 
-            // 게시글 삭제
             if (delete_post(post_id) == 1) {
                 send(client_socket, "DELETE_SUCCESS", strlen("DELETE_SUCCESS"), 0);
             } else {
@@ -328,13 +327,14 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-         // 채팅방 생성 처리
+         // case 8: 채팅방 생성 처리
         if (strncmp(buffer, "CREATE_CHAT", 11) == 0) {
             char room_name[MAX_ROOM_NAME];
             char creator_id[MAX_USERID] = {0};
             char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
 
+            // 로그인 상태 확인
             pthread_mutex_lock(&mutex);
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].socket == client_socket) {
@@ -362,7 +362,7 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // 채팅방 목록 조회 처리
+        // case 9: 채팅방 목록 조회 처리
         if (strncmp(buffer, "VIEW_CHAT_LIST", 14) == 0) {
             int is_logged_in = 0;
 
@@ -387,16 +387,18 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // JOIN_CHAT 명령 처리
+        // case 10: 채팅방 참여 처리
         if (strncmp(buffer, "JOIN_CHAT", 9) == 0) {
             int room_id;
             sscanf(buffer, "JOIN_CHAT %d", &room_id);
-            
+
+            // 채팅방 ID 유효성 검사
             if (room_id <= 0 || room_id > MAX_CHAT_ROOMS) {
                 send(client_socket, "Invalid room ID", strlen("Invalid room ID"), 0);
                 continue;
             }
 
+            // 채팅방 존재 여부 확인
             int idx = room_id - 1;
             if (!chat_rooms[idx].is_active) {
                 send(client_socket, "Chat room does not exist", strlen("Chat room does not exist"), 0);
@@ -415,7 +417,7 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // LEAVE_CHAT 명령 처리
+        // case 11: 채팅방 퇴장 처리
         if (strncmp(buffer, "LEAVE_CHAT", 10) == 0) {
             int room_id;
             sscanf(buffer, "LEAVE_CHAT %d", &room_id);
@@ -428,7 +430,7 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // SEND_MESSAGE 명령 처리
+        // case 12: 채팅 메시지 전송 처리
         if (strncmp(buffer, "SEND_MESSAGE", 12) == 0) {
             int room_id;
             char message_content[MAX_MESSAGE];
@@ -436,7 +438,7 @@ void *handle_client(void *socket_desc) {
             
             sscanf(buffer, "SEND_MESSAGE %d %s %[^\n]", &room_id, sender_id, message_content);
             
-            // 채팅방 존재 여부 및 사용자가 해당 채팅방에 있는지 확인
+            // 사용자가 채팅방에 속해 있는지 확인
             int is_member = 0;
             pthread_mutex_lock(&mutex);
             int idx = room_id - 1;
@@ -464,7 +466,7 @@ void *handle_client(void *socket_desc) {
             snprintf(log_message, sizeof(log_message), "[%s] Room %d - %s: %s\n", 
                     timestamp, room_id, sender_id, message_content);
 
-            FILE *fp = fopen("chatting_log.txt", "a");
+            FILE *fp = fopen("file_log/chatting_log.txt", "a");
             if (fp != NULL) {
                 fprintf(fp, "%s", log_message);
                 fclose(fp);
@@ -475,13 +477,13 @@ void *handle_client(void *socket_desc) {
             continue;
         }
 
-        // DELETE_CHAT 명령 처리
+        // case 13: 채팅방 삭제 처리
         if (strncmp(buffer, "DELETE_CHAT", 11) == 0) {
             int room_id;
             char user_id[MAX_USERID] = {0};
             int is_logged_in = 0;
             
-            // 로그인 상태 및 사용자 ID 확인
+            // 로그인 상태 확인
             pthread_mutex_lock(&mutex);
             for (int i = 0; i < MAX_CLIENTS; i++) {
                 if (clients[i].socket == client_socket) {
@@ -501,6 +503,7 @@ void *handle_client(void *socket_desc) {
             
             int result = delete_chat_room(room_id, user_id);
             
+            // 결과에 따른 응답 전송
             switch(result) {
                 case 0:
                     send(client_socket, "DELETE_CHAT_SUCCESS", strlen("DELETE_CHAT_SUCCESS"), 0);
@@ -579,7 +582,8 @@ int main() {
             free(new_sock);
         }
 
-        pthread_detach(thread_id); // 스레드 리소스 자동 정리
+        // 스레드 리소스 자동 정리
+        pthread_detach(thread_id);
     }
 
     if (client_socket < 0) {
